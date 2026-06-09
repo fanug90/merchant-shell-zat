@@ -2,4 +2,7 @@ export * from './lib/api-error.model';
 export * from './lib/core-api.config';
 export * from './lib/core-api.service';
 export * from './lib/http-interceptors';
+export * from './lib/onboarding-api.service';
+export * from './lib/onboarding-session.service';
+export * from './lib/onboarding.types';
 export * from './lib/page.model';

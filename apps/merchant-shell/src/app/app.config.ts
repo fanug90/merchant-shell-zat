@@ -39,6 +39,7 @@ export const appConfig: ApplicationConfig = {
       provide: CORE_API_CONFIG,
       useValue: {
         bffBaseUrl: environment.bffBaseUrl,
+        merchantServiceBaseUrl: environment.merchantServiceBaseUrl,
         coreApiVersion: environment.coreApiVersion,
         useMockWorkspace: environment.useMockWorkspace,
       },

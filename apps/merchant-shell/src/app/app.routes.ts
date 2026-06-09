@@ -17,6 +17,13 @@ export const appRoutes: Route[] = [
       import('./core/auth/callback.component').then((module) => module.CallbackComponent),
   },
   {
+    path: 'onboarding',
+    loadComponent: () =>
+      import('./features/onboarding/onboarding.component').then(
+        (module) => module.OnboardingComponent
+      ),
+  },
+  {
     path: 'workspace-error',
     loadComponent: () =>
       import('./core/errors/workspace-error.component').then(

@@ -1,16 +1,19 @@
 import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
-import { Router } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { AuthService } from '@zat-main-web/auth';
 import { EsButtonComponent, EsCardComponent } from '@zat-main-web/shared-ui';
 
 @Component({
   selector: 'es-login',
   standalone: true,
-  imports: [EsButtonComponent, EsCardComponent],
+  imports: [RouterLink, EsButtonComponent, EsCardComponent],
   template: `
     <main class="auth-page">
       <es-card title="Merchant workspace" subtitle="Sign in to continue to your ZAT workspace.">
-        <es-button (click)="login()">Continue with Keycloak</es-button>
+        <div class="actions">
+          <es-button (click)="login()">Continue with Keycloak</es-button>
+          <a routerLink="/onboarding">Create merchant account</a>
+        </div>
       </es-card>
     </main>
   `,
@@ -21,6 +24,18 @@ import { EsButtonComponent, EsCardComponent } from '@zat-main-web/shared-ui';
         min-height: 100vh;
         place-items: center;
         padding: 1rem;
+      }
+
+      .actions {
+        align-items: center;
+        display: flex;
+        gap: 1rem;
+      }
+
+      a {
+        color: var(--es-color-primary);
+        font-weight: 700;
+        text-decoration: none;
       }
     `,
   ],
