@@ -20,8 +20,19 @@ import { EsSpinnerComponent } from '@zat-main-web/shared-ui';
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class CallbackComponent {
+  private readonly auth = inject(AuthService);
+  private readonly router = inject(Router);
+
   constructor() {
-    void inject(AuthService).login();
-    void inject(Router).navigate(['/home']);
+    void this.completeCallback();
+  }
+
+  private async completeCallback(): Promise<void> {
+    try {
+      const authenticated = await this.auth.completeLoginCallback();
+      await this.router.navigate([authenticated ? '/home' : '/login'], { replaceUrl: true });
+    } catch {
+      await this.router.navigate(['/login'], { replaceUrl: true });
+    }
   }
 }

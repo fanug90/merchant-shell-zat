@@ -43,13 +43,13 @@ interface UploadedKycFile {
     <main class="onboarding">
       <section class="hero">
         <div>
-          <p class="eyebrow">Merchant onboarding</p>
-          <h1>Open your ZAT merchant workspace</h1>
+          <p class="eyebrow">Create account</p>
+          <h1>Open your EthioStripe merchant workspace</h1>
           <p>
             Verify your phone, register the business, upload KYC documents, and choose a settlement account.
           </p>
         </div>
-        <a href="/login">Already onboarded?</a>
+        <a href="/login">Back to welcome</a>
       </section>
 
       <section class="progress" aria-label="Onboarding progress">
@@ -265,7 +265,10 @@ interface UploadedKycFile {
   styles: [
     `
       .onboarding {
-        background: var(--es-color-app-bg);
+        background:
+          radial-gradient(circle at 12% 12%, rgba(0, 168, 121, 0.14), transparent 28%),
+          radial-gradient(circle at 82% 16%, rgba(21, 89, 209, 0.12), transparent 28%),
+          linear-gradient(135deg, #f8fbff 0%, #eef8f4 48%, #f7f4ff 100%);
         color: var(--es-color-neutral-900);
         min-height: 100vh;
         padding: 2rem;
@@ -273,15 +276,21 @@ interface UploadedKycFile {
 
       .hero {
         align-items: end;
+        background: rgba(255, 255, 255, 0.9);
+        border: 1px solid rgba(215, 227, 241, 0.9);
+        border-radius: 24px;
+        box-shadow: 0 24px 70px rgba(6, 26, 64, 0.1);
         display: flex;
         gap: 1rem;
         justify-content: space-between;
         margin: 0 auto 1.25rem;
         max-width: 72rem;
+        padding: 1.5rem;
       }
 
       .hero h1 {
-        font-size: 2rem;
+        color: #061a40;
+        font-size: 2.15rem;
         letter-spacing: 0;
         margin: 0.25rem 0;
       }
@@ -293,13 +302,13 @@ interface UploadedKycFile {
       }
 
       .hero a {
-        color: var(--es-color-primary);
+        color: var(--es-color-accent-dark);
         font-weight: 700;
         text-decoration: none;
       }
 
       .eyebrow {
-        color: var(--es-color-primary) !important;
+        color: var(--es-color-accent-dark) !important;
         font-size: 0.8125rem;
         font-weight: 800;
         text-transform: uppercase;
@@ -324,7 +333,7 @@ interface UploadedKycFile {
 
       .progress button {
         align-items: center;
-        background: white;
+        background: rgba(255, 255, 255, 0.88);
         border: 1px solid var(--es-color-border);
         border-radius: var(--es-radius-sm);
         color: var(--es-color-neutral-700);
@@ -341,14 +350,16 @@ interface UploadedKycFile {
       }
 
       .progress button.active {
-        border-color: var(--es-color-primary);
-        color: var(--es-color-primary);
+        border-color: var(--es-color-accent);
+        box-shadow: 0 0 0 3px rgba(0, 168, 121, 0.12);
+        color: var(--es-color-accent-dark);
       }
 
       .progress span {
         align-items: center;
-        background: var(--es-color-neutral-100);
+        background: rgba(0, 168, 121, 0.08);
         border-radius: 999px;
+        color: var(--es-color-accent-dark);
         display: inline-flex;
         font-size: 0.75rem;
         font-weight: 800;
@@ -385,10 +396,17 @@ interface UploadedKycFile {
       input,
       select {
         background: white;
-        border: 1px solid var(--es-color-border);
+        border: 1px solid #cbd8e7;
         border-radius: var(--es-radius-sm);
         min-height: 2.75rem;
         padding: 0 0.75rem;
+      }
+
+      input:focus,
+      select:focus {
+        border-color: var(--es-color-accent);
+        box-shadow: 0 0 0 3px rgba(0, 168, 121, 0.14);
+        outline: 0;
       }
 
       .checkbox {
@@ -456,8 +474,8 @@ interface UploadedKycFile {
       }
 
       .accounts button.selected {
-        border-color: var(--es-color-primary);
-        box-shadow: 0 0 0 3px rgba(26, 86, 219, 0.14);
+        border-color: var(--es-color-accent);
+        box-shadow: 0 0 0 3px rgba(0, 168, 121, 0.14);
       }
 
       .review div {

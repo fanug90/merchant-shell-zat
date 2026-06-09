@@ -22,12 +22,12 @@ import { TopbarComponent } from './topbar.component';
     `
       .shell {
         display: grid;
-        grid-template-columns: 17rem minmax(0, 1fr);
+        grid-template-columns: 18rem minmax(0, 1fr);
         min-height: 100vh;
       }
 
       .shell__main {
-        background: var(--es-color-app-bg);
+        background: var(--es-gradient-page);
         min-width: 0;
       }
 

@@ -9,9 +9,11 @@ import { TenantContextService } from '@zat-main-web/tenant-context';
   template: `
     <aside class="sidebar" aria-label="Workspace navigation">
       <a class="brand" routerLink="/home">
-        <span>ZAT</span>
-        <strong>Merchant</strong>
+        <span>ES</span>
+        <strong>EthioStripe</strong>
       </a>
+
+      <p class="sidebar__label">Merchant workspace</p>
 
       <nav>
         @for (item of navItems(); track item.route) {
@@ -29,10 +31,13 @@ import { TenantContextService } from '@zat-main-web/tenant-context';
   styles: [
     `
       .sidebar {
-        background: var(--es-color-neutral-900);
+        background:
+          linear-gradient(180deg, rgba(6, 26, 64, 0.98), rgba(6, 26, 64, 0.94)),
+          var(--es-color-neutral-900);
+        border-right: 1px solid rgba(255, 255, 255, 0.08);
         color: white;
         min-height: 100vh;
-        padding: 1rem;
+        padding: 1.25rem;
       }
 
       .brand {
@@ -46,13 +51,26 @@ import { TenantContextService } from '@zat-main-web/tenant-context';
 
       .brand span {
         align-items: center;
-        background: var(--es-color-primary);
-        border-radius: var(--es-radius-sm);
+        background: var(--es-gradient-brand);
+        border-radius: 12px;
         display: inline-flex;
         font-weight: 800;
-        height: 2.25rem;
+        height: 2.6rem;
         justify-content: center;
-        width: 2.25rem;
+        width: 2.6rem;
+      }
+
+      .brand strong {
+        font-size: 1.05rem;
+      }
+
+      .sidebar__label {
+        color: rgba(255, 255, 255, 0.58);
+        font-size: 0.72rem;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        margin: 0 0 0.8rem;
+        text-transform: uppercase;
       }
 
       nav {
@@ -62,8 +80,9 @@ import { TenantContextService } from '@zat-main-web/tenant-context';
 
       nav a {
         align-items: center;
-        border-radius: var(--es-radius-sm);
-        color: #d1d5db;
+        border: 1px solid transparent;
+        border-radius: 10px;
+        color: rgba(255, 255, 255, 0.78);
         display: grid;
         gap: 0.625rem;
         grid-template-columns: 1.5rem minmax(0, 1fr) auto;
@@ -74,7 +93,8 @@ import { TenantContextService } from '@zat-main-web/tenant-context';
 
       nav a.active,
       nav a:hover {
-        background: rgba(255, 255, 255, 0.1);
+        background: rgba(255, 255, 255, 0.11);
+        border-color: rgba(255, 255, 255, 0.08);
         color: white;
       }
 
@@ -86,7 +106,7 @@ import { TenantContextService } from '@zat-main-web/tenant-context';
       }
 
       em {
-        background: var(--es-color-primary);
+        background: var(--es-color-accent);
         border-radius: 999px;
         font-size: 0.75rem;
         font-style: normal;

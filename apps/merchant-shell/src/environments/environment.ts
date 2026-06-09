@@ -9,6 +9,6 @@ export const environment = {
     keycloakUrl: 'https://identity.trucksload.com',
     keycloakRealm: 'merchant-os',
     keycloakClientId: 'merchant-shell',
-    devAuthenticated: true,
+    devAuthenticated: false,
   },
 };

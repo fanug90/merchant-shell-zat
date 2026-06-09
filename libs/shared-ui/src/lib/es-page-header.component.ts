@@ -25,6 +25,7 @@ import { ChangeDetectionStrategy, Component, input } from '@angular/core';
       }
 
       h1 {
+        color: var(--es-color-neutral-900);
         font-size: 1.5rem;
         line-height: 1.2;
         margin: 0;

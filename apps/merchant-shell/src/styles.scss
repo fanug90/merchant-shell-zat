@@ -1,17 +1,19 @@
 :root {
-  --es-color-primary: #1a56db;
-  --es-color-primary-hover: #1e429f;
+  --es-color-primary: #0080fb;
+  --es-color-primary-hover: #1559d1;
+  --es-color-accent: #00a879;
+  --es-color-accent-dark: #00765f;
   --es-color-danger: #c81e1e;
   --es-color-success: #057a55;
   --es-color-warning: #c27803;
-  --es-color-neutral-900: #111928;
+  --es-color-neutral-900: #061a40;
   --es-color-neutral-700: #374151;
-  --es-color-neutral-600: #4b5563;
+  --es-color-neutral-600: #5f6f84;
   --es-color-neutral-200: #e5e7eb;
-  --es-color-neutral-100: #f3f4f6;
+  --es-color-neutral-100: #f3f8fb;
   --es-color-surface: #ffffff;
-  --es-color-app-bg: #f8fafc;
-  --es-color-border: #d1d5db;
+  --es-color-app-bg: #f8fbff;
+  --es-color-border: #d7e3f1;
   --es-font-sans: Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --es-font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
   --es-text-base: 1rem;
@@ -23,7 +25,13 @@
   --es-radius-sm: 4px;
   --es-radius-md: 8px;
   --es-radius-lg: 12px;
-  --es-shadow-card: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04);
+  --es-gradient-brand: linear-gradient(135deg, var(--es-color-accent), var(--es-color-primary-hover));
+  --es-gradient-page:
+    radial-gradient(circle at 12% 12%, rgba(0, 168, 121, 0.12), transparent 28%),
+    radial-gradient(circle at 82% 16%, rgba(21, 89, 209, 0.1), transparent 28%),
+    linear-gradient(135deg, #f8fbff 0%, #eef8f4 48%, #f7f4ff 100%);
+  --es-shadow-card: 0 18px 45px rgba(6, 26, 64, 0.09);
+  --es-shadow-panel: 0 24px 70px rgba(6, 26, 64, 0.12);
 }
 
 * {
@@ -36,7 +44,7 @@ body {
 }
 
 body {
-  background: var(--es-color-app-bg);
+  background: var(--es-gradient-page);
   color: var(--es-color-neutral-900);
   font-family: var(--es-font-sans);
   font-size: var(--es-text-base);

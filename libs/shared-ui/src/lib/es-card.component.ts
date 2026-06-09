@@ -23,7 +23,7 @@ import { ChangeDetectionStrategy, Component, input } from '@angular/core';
   styles: [
     `
       .es-card {
-        background: var(--es-color-surface);
+        background: rgba(255, 255, 255, 0.92);
         border: 1px solid var(--es-color-border);
         border-radius: var(--es-radius-md);
         box-shadow: var(--es-shadow-card);
@@ -35,6 +35,7 @@ import { ChangeDetectionStrategy, Component, input } from '@angular/core';
       }
 
       h2 {
+        color: var(--es-color-neutral-900);
         font-size: 1rem;
         margin: 0;
       }

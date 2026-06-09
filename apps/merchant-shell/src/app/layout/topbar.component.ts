@@ -10,6 +10,7 @@ import { TenantContextService } from '@zat-main-web/tenant-context';
   template: `
     <header class="topbar">
       <div>
+        <span class="eyebrow">Secure merchant session</span>
         <strong>{{ tenant.currentMerchant().businessName }}</strong>
         <span>{{ tenant.currentUser().displayName }} · {{ tenant.currentUser().email }}</span>
       </div>
@@ -23,8 +24,9 @@ import { TenantContextService } from '@zat-main-web/tenant-context';
     `
       .topbar {
         align-items: center;
-        background: var(--es-color-surface);
+        background: rgba(255, 255, 255, 0.86);
         border-bottom: 1px solid var(--es-color-border);
+        backdrop-filter: blur(18px);
         display: flex;
         gap: 1rem;
         justify-content: space-between;
@@ -37,9 +39,22 @@ import { TenantContextService } from '@zat-main-web/tenant-context';
         display: block;
       }
 
+      strong {
+        color: var(--es-color-neutral-900);
+      }
+
       span {
         color: var(--es-color-neutral-600);
         font-size: 0.875rem;
+      }
+
+      .eyebrow {
+        color: var(--es-color-accent-dark);
+        font-size: 0.72rem;
+        font-weight: 900;
+        letter-spacing: 0.08em;
+        margin-bottom: 0.15rem;
+        text-transform: uppercase;
       }
 
       .topbar__actions {

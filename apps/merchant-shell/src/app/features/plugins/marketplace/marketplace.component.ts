@@ -43,7 +43,7 @@ import { PluginManifest, TenantContextService } from '@zat-main-web/tenant-conte
       }
 
       a {
-        color: var(--es-color-primary);
+        color: var(--es-color-accent-dark);
         font-weight: 700;
         text-decoration: none;
       }

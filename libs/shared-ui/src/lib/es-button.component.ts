@@ -30,7 +30,7 @@ import { ChangeDetectionStrategy, Component, input } from '@angular/core';
       }
 
       .es-button--primary {
-        background: var(--es-color-primary);
+        background: var(--es-gradient-brand);
         color: white;
       }
 

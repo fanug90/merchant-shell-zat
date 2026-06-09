@@ -29,9 +29,11 @@ import { TenantContextService } from '@zat-main-web/tenant-context';
       dt {
         color: var(--es-color-neutral-600);
         font-size: 0.8125rem;
+        font-weight: 800;
       }
 
       dd {
+        color: var(--es-color-neutral-900);
         font-weight: 650;
         margin: 0.25rem 0 0;
       }

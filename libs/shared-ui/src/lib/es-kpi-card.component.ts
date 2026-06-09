@@ -15,10 +15,11 @@ import { ChangeDetectionStrategy, Component, input } from '@angular/core';
   styles: [
     `
       .es-kpi {
-        background: var(--es-color-surface);
+        background: rgba(255, 255, 255, 0.92);
         border: 1px solid var(--es-color-border);
         border-radius: var(--es-radius-md);
         padding: 1rem;
+        box-shadow: var(--es-shadow-card);
       }
 
       p {
@@ -34,7 +35,7 @@ import { ChangeDetectionStrategy, Component, input } from '@angular/core';
       }
 
       span {
-        color: var(--es-color-success);
+        color: var(--es-color-accent-dark);
         display: block;
         margin-top: 0.375rem;
       }

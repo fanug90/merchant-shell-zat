@@ -64,7 +64,12 @@ import {
       th {
         color: var(--es-color-neutral-600);
         font-size: 0.75rem;
+        letter-spacing: 0.06em;
         text-transform: uppercase;
+      }
+
+      tbody tr:hover {
+        background: rgba(0, 168, 121, 0.045);
       }
 
       .amount {
