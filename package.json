@@ -4,7 +4,7 @@
   "license": "MIT",
   "scripts": {
     "build": "zsh -lc 'source ~/.nvm/nvm.sh && nvm use >/dev/null && nx build merchant-shell'",
-    "test": "zsh -lc 'source ~/.nvm/nvm.sh && nvm use >/dev/null && nx test merchant-shell'",
+    "test": "zsh -lc 'source ~/.nvm/nvm.sh && nvm use >/dev/null && nx run-many -t test --projects=merchant-shell,auth,core-api'",
     "lint": "zsh -lc 'source ~/.nvm/nvm.sh && nvm use >/dev/null && nx lint merchant-shell'",
     "dev": "zsh -lc 'source ~/.nvm/nvm.sh && nvm use >/dev/null && nx serve merchant-shell --host=127.0.0.1 --port=4200'",
     "dev:verbose": "zsh -lc 'source ~/.nvm/nvm.sh && nvm use >/dev/null && nx serve merchant-shell --host=127.0.0.1 --port=4200 --verbose'"
