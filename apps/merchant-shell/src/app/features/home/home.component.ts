@@ -9,7 +9,7 @@ import { TenantContextService } from '@zat-main-web/tenant-context';
   template: `
     <es-page-header
       title="Dashboard"
-      [subtitle]="'EthioStripe workspace for ' + tenant.currentMerchant().businessName"
+      [subtitle]="'Platform workspace for ' + tenant.currentMerchant().businessName"
     />
 
     <section class="hero-panel">

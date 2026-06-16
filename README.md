@@ -1,96 +1,317 @@
-# ZatMainWeb
+# Merchant Shell
 
-<a alt="Nx logo" href="https://nx.dev" target="_blank" rel="noreferrer"><img src="https://raw.githubusercontent.com/nrwl/nx/master/images/nx-logo.png" width="45"></a>
+Angular/Nx workspace for the merchant web application. The primary app is a secure merchant shell with Keycloak sign-in, public merchant onboarding, workspace/dashboard screens, and a plugin runtime foundation.
 
-✨ Your new, shiny [Nx workspace](https://nx.dev) is ready ✨.
+## Application Overview
 
-[Learn more about this workspace setup and its capabilities](https://nx.dev/getting-started/intro#learn-nx?utm_source=nx_project&amp;utm_medium=readme&amp;utm_campaign=nx_projects) or run `npx nx graph` to visually explore what was created. Now, let's get you up to speed!
+The workspace is built with:
 
-## Run tasks
+- Angular 21 standalone components
+- Nx 22 project orchestration
+- Angular Signals and RxJS for state and async flows
+- Keycloak OIDC with PKCE for merchant sign-in
+- Typed HTTP services for merchant onboarding and shell APIs
+- Shared UI primitives and design tokens
 
-To run tasks with Nx use:
+The shell is intentionally thin: it owns authentication, workspace layout, tenant context, navigation, and plugin loading. Business verticals should live in plugins or backend services, not inside the shell.
 
-```sh
-npx nx <target> <project-name>
+## Repository Structure
+
+```text
+apps/
+  merchant-shell/                 Primary Angular merchant workspace
+    src/app/
+      core/
+        auth/                     Login and callback components
+        errors/                   Error and maintenance screens
+        guards/                   Shell route guards
+      features/
+        home/                     Secure dashboard
+        onboarding/               Public merchant onboarding flow
+        plugins/marketplace/      Plugin listing and management surface
+        reports/                  MVP route stub
+        settings/                 Merchant profile/settings
+        transactions/             Transaction list view
+      layout/                     Sidebar, topbar, shell layout
+      workspace/                  Workspace load service
+    src/environments/             Runtime endpoint and auth config
+
+libs/
+  auth/                           Keycloak/PKCE auth service and guards
+  core-api/                       Typed API clients, interceptors, onboarding models
+  plugin-runtime/                 Dynamic plugin host, loader, context token
+  shared-ui/                      Standalone UI primitives and styling conventions
+  tenant-context/                 Signal-based user, merchant, navigation, plugin state
 ```
 
-For example:
+## Important Routes
+
+| Route | Purpose |
+| --- | --- |
+| `/login` | Public first page with `Sign in` and `Create an account` choices |
+| `/onboarding` | Public phone OTP and merchant onboarding flow |
+| `/callback` | Keycloak authorization-code callback |
+| `/home` | Secured dashboard |
+| `/transactions` | Secured core transaction view |
+| `/settings` | Secured merchant settings |
+| `/plugins` | Secured plugin marketplace/listing |
+| `/plugins/:pluginKey` | Secured dynamic plugin host |
+
+
+## Prerequisites
+
+Install these before running the project:
+
+1. Node.js `>=20.19.0`
+2. npm
+3. zsh with `nvm` available at `~/.nvm/nvm.sh`
+
+This repo includes:
+
+- `.nvmrc` set to `24.16.0`
+- `.node-version` set to `24.16.0`
+- npm scripts that run `nvm use` before Nx commands
+
+If you run raw `nx` commands manually, activate the right Node version first:
 
 ```sh
-npx nx build myproject
+nvm use
 ```
 
-These targets are either [inferred automatically](https://nx.dev/concepts/inferred-tasks?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects) or defined in the `project.json` or `package.json` files.
+Using Node 16 will fail with errors such as:
 
-[More about running tasks in the docs &raquo;](https://nx.dev/features/run-tasks?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-
-## Add new projects
-
-While you could add new projects to your workspace manually, you might want to leverage [Nx plugins](https://nx.dev/concepts/nx-plugins?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects) and their [code generation](https://nx.dev/features/generate-code?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects) feature.
-
-To install a new plugin you can use the `nx add` command. Here's an example of adding the React plugin:
-```sh
-npx nx add @nx/react
+```text
+structuredClone is not defined
 ```
 
-Use the plugin's generator to create new projects. For example, to create a new React app or library:
+## Install Dependencies
+
+From the repository root:
 
 ```sh
-# Generate an app
-npx nx g @nx/react:app demo
-
-# Generate a library
-npx nx g @nx/react:lib some-lib
+npm install
 ```
 
-You can use `npx nx list` to get a list of installed plugins. Then, run `npx nx list <plugin-name>` to learn about more specific capabilities of a particular plugin. Alternatively, [install Nx Console](https://nx.dev/getting-started/editor-setup?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects) to browse plugins and generators in your IDE.
-
-[Learn more about Nx plugins &raquo;](https://nx.dev/concepts/nx-plugins?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects) | [Browse the plugin registry &raquo;](https://nx.dev/plugin-registry?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-
-## Set up CI!
-
-### Step 1
-
-To connect to Nx Cloud, run the following command:
+If this is a clean checkout with a valid lockfile, you can use:
 
 ```sh
-npx nx connect
+npm ci
 ```
 
-Connecting to Nx Cloud ensures a [fast and scalable CI](https://nx.dev/ci/intro/why-nx-cloud?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects) pipeline. It includes features such as:
+## Run Locally
 
-- [Remote caching](https://nx.dev/ci/features/remote-cache?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-- [Task distribution across multiple machines](https://nx.dev/ci/features/distribute-task-execution?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-- [Automated e2e test splitting](https://nx.dev/ci/features/split-e2e-tasks?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-- [Task flakiness detection and rerunning](https://nx.dev/ci/features/flaky-tasks?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-
-### Step 2
-
-Use the following command to configure a CI workflow for your workspace:
+Start the Angular dev server:
 
 ```sh
-npx nx g ci-workflow
+npm run dev
 ```
 
-[Learn more about Nx on CI](https://nx.dev/ci/intro/ci-with-nx#ready-get-started-with-your-provider?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
+The app runs at:
 
-## Install Nx Console
+```text
+http://127.0.0.1:4200/
+```
 
-Nx Console is an editor extension that enriches your developer experience. It lets you run tasks, generate code, and improves code autocompletion in your IDE. It is available for VSCode and IntelliJ.
+Recommended entry points:
 
-[Install Nx Console &raquo;](https://nx.dev/getting-started/editor-setup?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
+```text
+http://127.0.0.1:4200/login
+http://127.0.0.1:4200/onboarding
+```
 
-## Useful links
+For verbose server output:
 
-Learn more:
+```sh
+npm run dev:verbose
+```
 
-- [Learn more about this workspace setup](https://nx.dev/getting-started/intro#learn-nx?utm_source=nx_project&amp;utm_medium=readme&amp;utm_campaign=nx_projects)
-- [Learn about Nx on CI](https://nx.dev/ci/intro/ci-with-nx?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-- [Releasing Packages with Nx release](https://nx.dev/features/manage-releases?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-- [What are Nx plugins?](https://nx.dev/concepts/nx-plugins?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
+## Authentication Flow
 
-And join the Nx community:
-- [Discord](https://go.nx.dev/community)
-- [Follow us on X](https://twitter.com/nxdevtools) or [LinkedIn](https://www.linkedin.com/company/nrwl)
-- [Our Youtube channel](https://www.youtube.com/@nxdevtools)
-- [Our blog](https://nx.dev/blog?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
+The first screen is `/login`.
+
+- `Sign in` starts the Keycloak authorization-code + PKCE flow.
+- Keycloak redirects back to `/callback`.
+- `/callback` exchanges the code for tokens.
+- Access tokens are kept in memory.
+- Only temporary PKCE verifier/state values are stored in `sessionStorage` during the redirect flow.
+
+Current auth config is in:
+
+```text
+apps/merchant-shell/src/environments/environment.ts
+```
+
+Dashboard and workspace routes are guarded. Unauthenticated users are redirected to `/login`.
+
+## Onboarding Flow
+
+The onboarding feature uses the merchant-service Swagger contract at:
+
+```text
+http://62.171.137.149:8082/swagger-ui/index.html
+```
+
+Implemented flow:
+
+1. Request phone OTP:
+   `POST /v1/onboarding/phone/otp`
+2. Verify phone OTP:
+   `POST /v1/onboarding/phone/otp/verify`
+3. Use the returned onboarding bearer token for protected onboarding steps.
+4. Submit business details:
+   `POST /v1/onboarding/business-details`
+5. Upload KYC document files:
+   `POST /v1/merchants/me/kyc/documents`
+6. Submit KYC:
+   `POST /v1/merchants/me/kyc/submit`
+7. Link/select settlement account:
+   `POST /v1/merchants/me/bank-accounts`
+   `PUT /v1/onboarding/settlement-account`
+8. Submit onboarding:
+   `POST /v1/onboarding/submit`
+
+The onboarding token is managed separately from the Keycloak shell token.
+
+## API Configuration
+
+Configured in:
+
+```text
+apps/merchant-shell/src/environments/environment.ts
+```
+
+Current defaults:
+
+```ts
+bffBaseUrl: '',
+merchantServiceBaseUrl: 'http://62.171.137.149:8082',
+coreApiVersion: 'v1',
+useMockWorkspace: true,
+```
+
+`useMockWorkspace: true` means the secure dashboard can render mock workspace data while BFF integration is still being finalized.
+
+## Common Commands
+
+Run tests:
+
+```sh
+npm test
+```
+
+This runs:
+
+```sh
+nx run-many -t test --projects=merchant-shell,auth,core-api
+```
+
+Run Angular compiler checks:
+
+```sh
+zsh -lc 'source ~/.nvm/nvm.sh && nvm use >/dev/null && npx ngc -p apps/merchant-shell/tsconfig.app.json'
+```
+
+Run lint:
+
+```sh
+npm run lint
+```
+
+Build:
+
+```sh
+npm run build
+```
+
+View the Nx project graph:
+
+```sh
+npx nx graph
+```
+
+## Automated Test Coverage
+
+Current meaningful coverage includes:
+
+- Login page renders the sign-in/create-account choices.
+- Sign-in button starts Keycloak login.
+- Auth guard blocks unauthenticated dashboard access.
+- Auth service handles PKCE callback token exchange.
+- Auth service rejects invalid callback state.
+- Onboarding OTP endpoint is public.
+- Protected onboarding calls attach the onboarding bearer token.
+- KYC upload builds multipart requests with Swagger query params.
+
+## Design System Notes
+
+The app follows our Keycloak theme:
+
+- Navy text and shell surfaces
+- Ethio green and blue gradient primary actions
+- Soft blue/green/purple page background
+- White card surfaces with subtle borders/shadows
+- Rounded but restrained 8px cards for app content
+
+Global tokens live in:
+
+```text
+apps/merchant-shell/src/styles.scss
+```
+
+Shared UI primitives live in:
+
+```text
+libs/shared-ui/src/lib/
+```
+
+## Troubleshooting
+
+### `structuredClone is not defined`
+
+You are running Nx with an old Node version. Run:
+
+```sh
+nvm use
+```
+
+Then retry the command.
+
+### Browser opens `file://.../app.html`
+
+That bypasses Angular routing and providers. Start the dev server and open:
+
+```text
+http://127.0.0.1:4200/login
+```
+
+### Port 4200 is already in use
+
+Start on another port with raw Nx:
+
+```sh
+nvm use
+nx serve merchant-shell --host=127.0.0.1 --port=4300
+```
+
+Then open:
+
+```text
+http://127.0.0.1:4300/login
+```
+
+### Keycloak redirect mismatch
+
+The auth service normalizes `127.0.0.1` to `localhost` for the redirect URI. Make sure the Keycloak client allows:
+
+```text
+http://localhost:4200/callback
+```
+
+## Development Guidelines
+
+- Keep shell routes thin and platform-oriented.
+- Do not add vertical business logic to the shell.
+- Keep auth tokens in memory.
+- Keep onboarding token handling separate from Keycloak shell auth.
+- Add tests for guards, auth flows, and API endpoint contracts when changing those areas.
+- Prefer shared UI components and global design tokens over one-off styling.

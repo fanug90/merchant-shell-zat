@@ -44,7 +44,7 @@ interface UploadedKycFile {
       <section class="hero">
         <div>
           <p class="eyebrow">Create account</p>
-          <h1>Open your EthioStripe merchant workspace</h1>
+          <h1>Open your merchant workspace</h1>
           <p>
             Verify your phone, register the business, upload KYC documents, and choose a settlement account.
           </p>
@@ -75,7 +75,7 @@ interface UploadedKycFile {
 
       @switch (step()) {
         @case ('phone') {
-          <es-card title="Phone verification" subtitle="The OTP endpoints are public and return the onboarding bearer token.">
+          <es-card title="Phone verification">
             <form class="grid" (ngSubmit)="requestOtp()">
               <label>
                 Phone number

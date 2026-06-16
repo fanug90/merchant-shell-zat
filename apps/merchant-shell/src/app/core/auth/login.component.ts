@@ -9,11 +9,11 @@ import { EsButtonComponent } from '@zat-main-web/shared-ui';
   imports: [RouterLink, EsButtonComponent],
   template: `
     <main class="auth-page">
-      <section class="brand-panel" aria-label="EthioStripe platform overview">
-        <div class="brand-lockup" aria-label="EthioStripe">
+      <section class="brand-panel" aria-label="Platform overview">
+        <div class="brand-lockup" aria-label="Platform">
           <div class="brand-symbol">ES</div>
           <div>
-            <strong>EthioStripe</strong>
+            <strong>Platform</strong>
             <span>Merchant Operating System</span>
           </div>
         </div>
@@ -63,10 +63,10 @@ import { EsButtonComponent } from '@zat-main-web/shared-ui';
       </section>
 
       <section class="choice-panel" aria-label="Merchant access choices">
-        <div class="choice-lockup" aria-label="EthioStripe">
+        <div class="choice-lockup" aria-label="Platform">
           <div class="brand-symbol">ES</div>
           <div>
-            <strong>EthioStripe</strong>
+            <strong>Platform</strong>
             <span>Merchant Operating System</span>
           </div>
         </div>

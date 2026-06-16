@@ -10,7 +10,7 @@ import { TenantContextService } from '@zat-main-web/tenant-context';
     <aside class="sidebar" aria-label="Workspace navigation">
       <a class="brand" routerLink="/home">
         <span>ES</span>
-        <strong>EthioStripe</strong>
+        <strong>Platform</strong>
       </a>
 
       <p class="sidebar__label">Merchant workspace</p>
