@@ -9,6 +9,7 @@ import {
   OnboardingApiService,
   OnboardingSessionService,
   OnboardingStateResponse,
+  OnboardingStep,
   SettlementOptionResponse,
 } from '@zat-main-web/core-api';
 import {
@@ -606,20 +607,30 @@ export class OnboardingComponent {
               state: this.api.getOnboardingState(),
               requirements: this.api.listKycRequirements(),
               settlementOptions: this.api.listSettlementOptions(),
-              bankAccounts: this.api.listBankAccounts(),
+              // bankAccounts: this.api.listBankAccounts(),
             });
           })
         )
         .subscribe({
-          next: ({ state, requirements, settlementOptions, bankAccounts }) => {
+          next: ({ state, requirements, settlementOptions }) => {
             this.state.set(state);
             this.requirements.set(requirements);
             this.setDefaultDocumentType(requirements);
             this.settlementOptions.set(settlementOptions);
             this.setDefaultSettlementOption(settlementOptions);
-            this.bankAccounts.set(bankAccounts);
-            this.message.set('Phone verified. Continue with business details.');
-            this.step.set('business');
+            // this.bankAccounts.set(bankAccounts);
+
+            // Determine UI step from backend state; fallback to 'business'
+            const uiStep = this.mapServerStepToUiStep(state?.currentStep) ?? 'business';
+
+            // If backend supplied a current step, show a message that reflects restored state
+            if (state && state.currentStep) {
+              this.message.set(`Phone verified. Resuming at ${this.label(uiStep)}.`);
+            } else {
+              this.message.set('Phone verified. Continue with business details.');
+            }
+
+            this.step.set(uiStep);
           },
           error: (error) => this.showError(error),
           complete: () => this.loading.set(false),
@@ -628,7 +639,7 @@ export class OnboardingComponent {
   }
 
   submitBusinessDetails(): void {
-    this.run(() =>
+    this.run(() => 
       this.api
         .submitBusinessDetails({
           businessName: this.business.businessName,
@@ -809,9 +820,33 @@ export class OnboardingComponent {
     return this.api.getOnboardingState().pipe(
       switchMap((state) => {
         this.state.set(state);
+        // If backend returned a current step, update the UI to match it
+        // const uiStep = this.mapServerStepToUiStep(state?.currentStep);
+        // if (uiStep) {
+        //   this.step.set(uiStep);
+        // }
         return of(state);
       })
     );
+  }
+
+  private mapServerStepToUiStep(serverStep?: OnboardingStep): UiStep | null {
+    switch (serverStep) {
+      case 'PHONE_VERIFY':
+        return 'phone';
+      case 'BUSINESS_DETAILS':
+        return 'business';
+      case 'KYC_ID_UPLOAD':
+        return 'kyc';
+      case 'BANK_WALLET_LINK':
+        return 'settlement';
+      case 'REVIEW_SUBMIT':
+        return 'review';
+      case 'APPROVED':
+        return 'done';
+      default:
+        return null;
+    }
   }
 
   private run(start: () => void): void {
