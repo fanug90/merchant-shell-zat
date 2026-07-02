@@ -20,6 +20,7 @@ import {
   OnboardingStateResponse,
   OnboardingStep,
   SettlementOptionResponse,
+  SideUploadStatus,
   UploadPolicy,
 } from '@zat-main-web/core-api';
 import {
@@ -29,7 +30,7 @@ import {
   EsSpinnerComponent,
   EsStatusBadgeComponent,
 } from '@zat-main-web/shared-ui';
-import { forkJoin, map, of, switchMap } from 'rxjs';
+import { finalize, forkJoin, map, of, switchMap } from 'rxjs';
 
 type UiStep = 'phone' | 'business' | 'kyc' | 'settlement' | 'review' | 'done';
 
@@ -261,11 +262,20 @@ type GroupSelection = Record<string, DocumentType>;
                         </h3>
                         <p class="kyc-group__meta">
                           @if (group.selectionMode === 'ONE_OF') {
-                            Choose one of the following documents
+                            Choose one of the following document types.
                           } @else {
                             All of the following documents are required
                           }
                         </p>
+
+                             <!-- Upload policy hint -->
+              @if (uploadPolicy(); as policy) {
+                <p class="upload-hint" aria-live="polite">
+                  Accepted formats: {{ allowedFormatsLabel(policy) }} · Max
+                  size: {{ policy.maxFileSizeLabel }}
+                </p>
+              }
+
                       </div>
                       @if (group.satisfied) {
                         <es-status-badge label="Complete" tone="success" />
@@ -384,18 +394,21 @@ type GroupSelection = Record<string, DocumentType>;
                 }
               </div>
 
-              <!-- Upload policy hint -->
+              <!-- Upload policy hint
               @if (uploadPolicy(); as policy) {
                 <p class="upload-hint" aria-live="polite">
                   Accepted formats: {{ allowedFormatsLabel(policy) }} · Max
                   size: {{ policy.maxFileSizeLabel }}
                 </p>
-              }
+              } -->
 
               <!-- Submit all KYC -->
               <div class="kyc-submit">
+                 @if (kycSubmitError()) {
+    <p class="kyc-submit__error" role="alert">{{ kycSubmitError() }}</p>
+  }
                 <es-button
-                  [disabled]="loading() || !allGroupsSatisfied()"
+                  [disabled]="loading() || !allGroupsSatisfied() || anyUploadInProgress()"
                   (click)="submitAllKyc()"
                 >
                   Submit KYC documents
@@ -412,6 +425,9 @@ type GroupSelection = Record<string, DocumentType>;
                   [class.side-upload--done]="
                     isSideUploaded(option.documentType, side)
                   "
+                  [class.side-upload--uploading]="
+                    isUploading(option.documentType, side)
+                  "
                 >
                   <div class="side-upload__meta">
                     <span class="side-label">{{ side }}</span>
@@ -419,29 +435,46 @@ type GroupSelection = Record<string, DocumentType>;
                       <span class="side-done" aria-label="Uploaded">✓</span>
                     }
                   </div>
+
                   <div class="side-upload__actions">
                     @if (isSideUploaded(option.documentType, side)) {
                       <button
                         type="button"
                         class="view-button"
+                        [disabled]="isUploading(option.documentType, side)"
                         (click)="openPreview(option.documentType, side)"
                       >
                         View
                       </button>
                     }
+
                     <label
                       [for]="'file-' + option.documentType + '-' + side"
                       class="file-label"
+                      [class.file-label--disabled]="
+                        isUploading(option.documentType, side)
+                      "
                     >
-                      <span>{{
-                        isSideUploaded(option.documentType, side)
-                          ? 'Replace file'
-                          : 'Choose file'
-                      }}</span>
+                      <span>
+                        @if (isUploading(option.documentType, side)) {
+                          <span
+                            class="file-label__spinner"
+                            aria-hidden="true"
+                          ></span>
+                          Uploading…
+                        } @else {
+                          {{
+                            isSideUploaded(option.documentType, side)
+                              ? 'Replace file'
+                              : 'Choose file'
+                          }}
+                        }
+                      </span>
                       <input
                         [id]="'file-' + option.documentType + '-' + side"
                         type="file"
                         [accept]="acceptAttr()"
+                        [disabled]="isUploading(option.documentType, side)"
                         [attr.aria-label]="
                           option.displayName + ' ' + side + ' side'
                         "
@@ -450,8 +483,20 @@ type GroupSelection = Record<string, DocumentType>;
                     </label>
                   </div>
 
-                  @if (fileErrors()[option.documentType + '-' + side]; as err) {
-                    <p class="file-error" role="alert">{{ err }}</p>
+                  @if (sideStatusFor(option.documentType, side); as status) {
+                    <p
+                      class="side-upload__status"
+                      [class.side-upload__status--error]="
+                        status.type === 'error'
+                      "
+                      [class.side-upload__status--success]="
+                        status.type === 'success'
+                      "
+                      role="status"
+                      aria-live="polite"
+                    >
+                      {{ status.message }}
+                    </p>
                   }
                 </div>
               }
@@ -604,26 +649,35 @@ type GroupSelection = Record<string, DocumentType>;
       }
     </main>
 
-// image previewer
-
     @if (previewFile(); as file) {
-  <div
-    class="preview-overlay"
-    role="dialog"
-    aria-modal="true"
-    [attr.aria-label]="file.fileName + ' preview'"
-    (click)="closePreview()"
-  >
-    <div class="preview-dialog">
-      <button type="button" class="preview-close" (click)="closePreview()" aria-label="Close preview">✕</button>
-      @if (file.fileUrl) {
-        <img [src]="file.fileUrl" [alt]="file.fileName" class="preview-image" />
-      } @else {
-        <p class="preview-empty">No preview available for this file.</p>
-      }
-    </div>
-  </div>
-}
+      <div
+        class="preview-overlay"
+        role="dialog"
+        aria-modal="true"
+        [attr.aria-label]="file.fileName + ' preview'"
+        (click)="closePreview()"
+      >
+        <div class="preview-dialog">
+          <button
+            type="button"
+            class="preview-close"
+            (click)="closePreview()"
+            aria-label="Close preview"
+          >
+            ✕
+          </button>
+          @if (file.fileUrl) {
+            <img
+              [src]="file.fileUrl"
+              [alt]="file.fileName"
+              class="preview-image"
+            />
+          } @else {
+            <p class="preview-empty">No preview available for this file.</p>
+          }
+        </div>
+      </div>
+    }
   `,
   styles: [
     `
@@ -1008,6 +1062,15 @@ type GroupSelection = Record<string, DocumentType>;
         padding-top: 1.25rem;
       }
 
+      .kyc-submit__error {
+  background: #fde8e8;
+  border-radius: var(--es-radius-sm);
+  color: #9b1c1c;
+  font-size: 0.8125rem;
+  margin: 0 0 0.75rem;
+  padding: 0.625rem 0.875rem;
+}
+
       .file-error {
         color: #9b1c1c;
         font-size: 0.8125rem;
@@ -1015,75 +1078,128 @@ type GroupSelection = Record<string, DocumentType>;
       }
 
       /* image preview (popup) styles */
-     
-.side-upload__actions {
-  display: grid;
-  gap: 0.5rem;
-}
 
-.view-button {
-  background: white;
-  border: 1px solid var(--es-color-accent);
-  border-radius: var(--es-radius-sm);
-  color: var(--es-color-accent-dark);
-  cursor: pointer;
-  font-size: 0.8125rem;
-  font-weight: 700;
-  min-height: 2.25rem;
-  padding: 0 0.75rem;
-}
+      .side-upload__actions {
+        display: grid;
+        gap: 0.5rem;
+      }
 
-.view-button:hover {
-  background: rgba(0, 168, 121, 0.08);
-}
+      .view-button {
+        background: white;
+        border: 1px solid var(--es-color-accent);
+        border-radius: var(--es-radius-sm);
+        color: var(--es-color-accent-dark);
+        cursor: pointer;
+        font-size: 0.8125rem;
+        font-weight: 700;
+        min-height: 2.25rem;
+        padding: 0 0.75rem;
+      }
 
-.preview-overlay {
-  align-items: center;
-  background: rgba(6, 26, 64, 0.72);
-  cursor: pointer;
-  display: grid;
-  inset: 0;
-  justify-items: center;
-  padding: 2rem;
-  position: fixed;
-  z-index: 1000;
-}
+      .view-button:hover {
+        background: rgba(0, 168, 121, 0.08);
+      }
 
-.preview-dialog {
-  background: white;
-  border-radius: var(--es-radius-md);
-  cursor: default;
-  display: grid;
-  gap: 0.75rem;
-  max-height: 90vh;
-  max-width: min(90vw, 40rem);
-  padding: 1rem;
-  position: relative;
-}
+      .preview-overlay {
+        align-items: center;
+        background: rgba(6, 26, 64, 0.72);
+        cursor: pointer;
+        display: grid;
+        inset: 0;
+        justify-items: center;
+        padding: 2rem;
+        position: fixed;
+        z-index: 1000;
+      }
 
-.preview-close {
-  background: var(--es-color-neutral-100);
-  border: 1px solid var(--es-color-border);
-  border-radius: 999px;
-  cursor: pointer;
-  height: 2rem;
-  position: absolute;
-  right: 0.75rem;
-  top: 0.75rem;
-  width: 2rem;
-}
+      .preview-dialog {
+        background: white;
+        border-radius: var(--es-radius-md);
+        cursor: default;
+        display: grid;
+        gap: 0.75rem;
+        max-height: 90vh;
+        max-width: min(90vw, 40rem);
+        padding: 1rem;
+        position: relative;
+      }
 
-.preview-image {
-  border-radius: var(--es-radius-sm);
-  max-height: 80vh;
-  max-width: 100%;
-  object-fit: contain;
-}
+      .preview-close {
+        background: var(--es-color-neutral-100);
+        border: 1px solid var(--es-color-border);
+        border-radius: 999px;
+        cursor: pointer;
+        height: 2rem;
+        position: absolute;
+        right: 0.75rem;
+        top: 0.75rem;
+        width: 2rem;
+      }
 
-.preview-empty {
-  color: var(--es-color-neutral-600);
-  margin: 1rem;
-}
+      .preview-image {
+        border-radius: var(--es-radius-sm);
+        max-height: 80vh;
+        max-width: 100%;
+        object-fit: contain;
+      }
+
+      .preview-empty {
+        color: var(--es-color-neutral-600);
+        margin: 1rem;
+      }
+
+      /* style for uploading and error message displaying in each line when image uploads */
+
+      .side-upload {
+        position: relative;
+      }
+
+      .side-upload--uploading {
+        border-color: var(--es-color-primary);
+      }
+
+      .side-upload__status {
+        border-radius: var(--es-radius-sm);
+        font-size: 0.8125rem;
+        margin: 0;
+        padding: 0.5rem 0.625rem;
+      }
+
+      .side-upload__status--success {
+        background: #def7ec;
+        color: #03543f;
+      }
+
+      .side-upload__status--error {
+        background: #fde8e8;
+        color: #9b1c1c;
+      }
+
+      .file-label--disabled {
+        cursor: not-allowed;
+      }
+
+      .file-label--disabled span {
+        opacity: 0.75;
+      }
+
+      .file-label__spinner {
+        animation: side-upload-spin 800ms linear infinite;
+        border: 2px solid rgba(0, 128, 251, 0.25);
+        border-radius: 999px;
+        border-top-color: var(--es-color-primary);
+        display: inline-block;
+        height: 0.875rem;
+        margin-right: 0.375rem;
+        vertical-align: -2px;
+        width: 0.875rem;
+      }
+
+      @keyframes side-upload-spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
 
       /* ── Settlement ───────────────────────────────── */
 
@@ -1215,11 +1331,19 @@ export class OnboardingComponent {
   /** All uploaded files, keyed by documentType + side */
   readonly uploadedFiles = signal<UploadedKycFile[]>([]);
 
-  /** Per-field validation error messages, keyed by "documentType-side" */
-  readonly fileErrors = signal<Record<string, string>>({});
-
   /** File currently shown in the preview modal (null = closed) */
   readonly previewFile = signal<UploadedKycFile | null>(null);
+
+  /** Slots currently uploading, keyed by "documentType-side" */
+  readonly uploadingKeys = signal<Set<string>>(new Set());
+
+  /** Error shown next to the "Submit KYC documents" button */
+  readonly kycSubmitError = signal('');
+
+  /** Last success/error message per slot, keyed by "documentType-side" */
+  readonly sideStatus = signal<Record<string, SideUploadStatus>>({});
+
+  readonly anyUploadInProgress = computed(() => this.uploadingKeys().size > 0);
 
   phone = '+251';
   otpCode = '';
@@ -1311,6 +1435,65 @@ export class OnboardingComponent {
     this.previewFile.set(null);
   }
 
+  //helper methods for display images in their line rather than intop which is not convenent to see for user
+
+  private keyFor(documentType: DocumentType, side: DocumentSide): string {
+    return `${documentType}-${side}`;
+  }
+
+  isUploading(documentType: DocumentType, side: DocumentSide): boolean {
+    return this.uploadingKeys().has(this.keyFor(documentType, side));
+  }
+
+  sideStatusFor(
+    documentType: DocumentType,
+    side: DocumentSide,
+  ): SideUploadStatus | null {
+    return this.sideStatus()[this.keyFor(documentType, side)] ?? null;
+  }
+
+  private beginUpload(key: string): void {
+    this.uploadingKeys.update((keys) => new Set(keys).add(key));
+  }
+
+  private endUpload(key: string): void {
+    this.uploadingKeys.update((keys) => {
+      const next = new Set(keys);
+      next.delete(key);
+      return next;
+    });
+  }
+
+  private setSideStatus(
+    key: string,
+    type: SideUploadStatus['type'],
+    message: string,
+  ): void {
+    this.sideStatus.update((statuses) => ({
+      ...statuses,
+      [key]: { type, message },
+    }));
+  }
+
+  private clearSideStatus(key: string): void {
+    this.sideStatus.update((statuses) => {
+      const next = { ...statuses };
+      delete next[key];
+      return next;
+    });
+  }
+
+  private extractErrorMessage(error: unknown): string {
+    const maybeHttpError = error as {
+      error?: { message?: string };
+      message?: string;
+    };
+    return (
+      maybeHttpError.error?.message ??
+      maybeHttpError.message ??
+      'The upload failed. Please try again.'
+    );
+  }
 
   // allGroupsHaveUploads(): boolean {
   //   return this.kycGroups().every((group) => {
@@ -1348,130 +1531,188 @@ export class OnboardingComponent {
     }));
   }
 
-  onFileChange(
-    option: KycDocumentOption,
-    side: DocumentSide,
-    event: Event,
-  ): void {
-    const input = event.target as HTMLInputElement;
-    const file = input.files?.[0];
-    if (!file) return;
+  // onFileChange(
+  //   option: KycDocumentOption,
+  //   side: DocumentSide,
+  //   event: Event,
+  // ): void {
+  //   const input = event.target as HTMLInputElement;
+  //   const file = input.files?.[0];
+  //   if (!file) return;
 
-    const key = `${option.documentType}-${side}`;
+  //   const key = `${option.documentType}-${side}`;
 
-    // Client-side validation against upload policy
-    const policy = this.uploadPolicy();
-    if (policy) {
-      if (file.size > policy.maxFileSizeBytes) {
-        this.fileErrors.update((e) => ({
-          ...e,
-          [key]: `File exceeds the ${policy.maxFileSizeLabel} size limit.`,
-        }));
-        input.value = '';
-        return;
-      }
-      if (!policy.allowedContentTypes.includes(file.type)) {
-        this.fileErrors.update((e) => ({
-          ...e,
-          [key]: `Only ${this.allowedFormatsLabel(policy)} files are accepted.`,
-        }));
-        input.value = '';
-        return;
-      }
-    }
+  //   // Client-side validation against upload policy
+  //   const policy = this.uploadPolicy();
+  //   if (policy) {
+  //     if (file.size > policy.maxFileSizeBytes) {
+  //       this.fileErrors.update((e) => ({
+  //         ...e,
+  //         [key]: `File exceeds the ${policy.maxFileSizeLabel} size limit.`,
+  //       }));
+  //       input.value = '';
+  //       return;
+  //     }
+  //     if (!policy.allowedContentTypes.includes(file.type)) {
+  //       this.fileErrors.update((e) => ({
+  //         ...e,
+  //         [key]: `Only ${this.allowedFormatsLabel(policy)} files are accepted.`,
+  //       }));
+  //       input.value = '';
+  //       return;
+  //     }
+  //   }
 
-    // Clear any prior error for this field
-    this.fileErrors.update((e) => {
-      const next = { ...e };
-      delete next[key];
-      return next;
-    });
+  //   // Clear any prior error for this field
+  //   this.fileErrors.update((e) => {
+  //     const next = { ...e };
+  //     delete next[key];
+  //     return next;
+  //   });
 
-    this.run(() =>
-      this.api
-        .uploadKycDocument(option.documentType, side, file)
-        .pipe(
-          switchMap((response) => {
-            // Record the upload locally first so the file name/id is available
-            this.uploadedFiles.update((files) => [
-              ...files.filter(
-                (f) =>
-                  !(f.documentType === option.documentType && f.side === side),
-              ),
-              {
-                documentId: response.documentId,
-                documentType: option.documentType,
-                side: response.side,
-                fileName: response.fileName,
-                fileUrl: response.fileUrl,
-              },
-            ]);
-            // Then refresh state so the server's uploadedSides/complete/satisfied
-            return this.refreshState();
-          }),
-        )
-        .subscribe({
-          next: () => {
-            this.message.set(`${option.displayName} ${side} uploaded.`);
-          },
-          error: (err: unknown) => this.showError(err),
-          complete: () => this.loading.set(false),
-        }),
-    );
+  //   this.run(() =>
+  //     this.api
+  //       .uploadKycDocument(option.documentType, side, file)
+  //       .pipe(
+  //         switchMap((response) => {
+  //           // Record the upload locally first so the file name/id is available
+  //           this.uploadedFiles.update((files) => [
+  //             ...files.filter(
+  //               (f) =>
+  //                 !(f.documentType === option.documentType && f.side === side),
+  //             ),
+  //             {
+  //               documentId: response.documentId,
+  //               documentType: option.documentType,
+  //               side: response.side,
+  //               fileName: response.fileName,
+  //               fileUrl: response.fileUrl,
+  //             },
+  //           ]);
+  //           // Then refresh state so the server's uploadedSides/complete/satisfied
+  //           return this.refreshState();
+  //         }),
+  //       )
+  //       .subscribe({
+  //         next: () => {
+  //           this.message.set(`${option.displayName} ${side} uploaded.`);
+  //         },
+  //         error: (err: unknown) => this.showError(err),
+  //         complete: () => this.loading.set(false),
+  //       }),
+  //   );
 
-    // this.run(() =>
-    //   this.api.uploadKycDocument(option.documentType, side, file)
-    // // .pipe(
-    // //     switchMap((response) => this.refreshState().pipe(map(() => response)))
-    // //   )
-    //   .subscribe({
-    //     next: (response) => {
-    //       this.uploadedFiles.update((files) => [
-    //         ...files.filter(
-    //           (f) => !(f.documentType === option.documentType && f.side === side)
-    //         ),
-    //         {
-    //           documentId: response.documentId,
-    //           documentType: option.documentType,
-    //           side: response.side,
-    //           fileName: response.fileName,
-    //           fileUrl: response.fileUrl,
-    //         },
-    //       ]);
-    //       this.message.set(`${option.displayName} ${side} uploaded.`);
-    //     },
-    //     error: (err: unknown) => this.showError(err),
-    //     complete: () => this.loading.set(false),
-    //   })
-    // );
-  }
+  //   // this.run(() =>
+  //   //   this.api.uploadKycDocument(option.documentType, side, file)
+  //   // // .pipe(
+  //   // //     switchMap((response) => this.refreshState().pipe(map(() => response)))
+  //   // //   )
+  //   //   .subscribe({
+  //   //     next: (response) => {
+  //   //       this.uploadedFiles.update((files) => [
+  //   //         ...files.filter(
+  //   //           (f) => !(f.documentType === option.documentType && f.side === side)
+  //   //         ),
+  //   //         {
+  //   //           documentId: response.documentId,
+  //   //           documentType: option.documentType,
+  //   //           side: response.side,
+  //   //           fileName: response.fileName,
+  //   //           fileUrl: response.fileUrl,
+  //   //         },
+  //   //       ]);
+  //   //       this.message.set(`${option.displayName} ${side} uploaded.`);
+  //   //     },
+  //   //     error: (err: unknown) => this.showError(err),
+  //   //     complete: () => this.loading.set(false),
+  //   //   })
+  //   // );
+  // }
 
-  submitAllKyc(): void {
-    const allDocumentIds = [
-      ...new Set(this.uploadedFiles().map((f) => f.documentId)),
-    ];
+ onFileChange(option: KycDocumentOption, side: DocumentSide, event: Event): void {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  if (!file) return;
 
-    if (allDocumentIds.length === 0) {
-      this.error.set(
-        'No documents found to submit. Please upload all required documents first.',
-      );
+  const key = this.keyFor(option.documentType, side);
+  const policy = this.uploadPolicy();
+
+  if (policy) {
+    if (file.size > policy.maxFileSizeBytes) {
+      this.setSideStatus(key, 'error', `File exceeds the ${policy.maxFileSizeLabel} size limit.`);
+      input.value = '';
       return;
     }
-
-    this.run(() =>
-      this.api
-        .submitKyc({ documentIds: allDocumentIds })
-        .pipe(switchMap(() => this.refreshState()))
-        .subscribe({
-          next: () => {
-            this.message.set('KYC submitted for review.');
-            this.step.set('settlement');
-          },
-          error: (err: unknown) => this.showError(err),
-          complete: () => this.loading.set(false),
-        }),
-    );
+    if (!policy.allowedContentTypes.includes(file.type)) {
+      this.setSideStatus(key, 'error', `Only ${this.allowedFormatsLabel(policy)} files are accepted.`);
+      input.value = '';
+      return;
+    }
   }
+
+  this.clearSideStatus(key);
+  this.beginUpload(key);
+
+  this.api
+    .uploadKycDocument(option.documentType, side, file)
+    .pipe(
+      switchMap((response) => {
+        this.uploadedFiles.update((files) => [
+          ...files.filter((f) => !(f.documentType === option.documentType && f.side === side)),
+          {
+            documentId: response.documentId,
+            documentType: option.documentType,
+            side: response.side,
+            fileName: response.fileName,
+            fileUrl: response.fileUrl,
+          },
+        ]);
+        return this.refreshState();
+      }),
+      finalize(() => {
+        this.endUpload(key);
+        input.value = ''; // allow re-selecting the same file after a failure
+      }),
+    )
+    .subscribe({
+      next: () => {
+        this.setSideStatus(key, 'success', `${option.displayName} ${side} uploaded successfully.`);
+      },
+      error: (err: unknown) => {
+        this.setSideStatus(key, 'error', this.extractErrorMessage(err));
+      },
+    });
+}
+
+  submitAllKyc(): void {
+  const allDocumentIds = [...new Set(this.uploadedFiles().map((f) => f.documentId))];
+
+  if (allDocumentIds.length === 0) {
+    this.kycSubmitError.set(
+      'No documents found to submit. Please upload all required documents first.',
+    );
+    return;
+  }
+
+  this.kycSubmitError.set('');
+  this.loading.set(true);
+
+  this.api
+    .submitKyc({ documentIds: allDocumentIds })
+    .pipe(
+      switchMap(() => this.refreshState()),
+      finalize(() => this.loading.set(false)),
+    )
+    .subscribe({
+      next: () => {
+        this.message.set('KYC submitted for review.');
+        this.step.set('settlement');
+      },
+      error: (err: unknown) => {
+        this.kycSubmitError.set(this.extractErrorMessage(err));
+      },
+    });
+}
 
   // submitAllKyc(): void {
   //   // Build one submit request per distinct documentType that has uploads

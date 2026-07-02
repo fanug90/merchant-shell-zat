@@ -25,6 +25,8 @@ export type MerchantOnboardingStatus =
 export type DocumentType = 'KEBELE_ID' | 'PASSPORT' | 'DRIVERS_LICENSE' | 'TRADE_LICENSE';
 export type DocumentSide = 'FRONT' | 'BACK' | 'SELFIE';
 export type BankCode = 'CBE' | 'ETT' | 'AWB' | 'DAS' | 'ABB' | 'OTHER';
+export type SideUploadStatus = { type: 'success' | 'error'; message: string };
+
 
 export interface PhoneOtpRequest {
   phone: string;
