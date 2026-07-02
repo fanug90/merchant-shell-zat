@@ -13,8 +13,8 @@ export class OnboardingSessionService {
 
   setVerification(phone: string, response: PhoneOtpVerificationResponse): void {
     this.phoneSignal.set(phone);
-    this.tokenSignal.set(response.accessToken);
-    this.expiresAtSignal.set(Date.now() + response.expiresInSeconds * 1000);
+    this.tokenSignal.set(response.token.accessToken);
+    this.expiresAtSignal.set(Date.now() + response.token.expiresInSeconds * 1000);
   }
 
   clear(): void {

@@ -22,6 +22,7 @@ import {
   PhoneOtpVerificationRequest,
   PhoneOtpVerificationResponse,
   SettlementOptionResponse,
+  UploadPolicy,
 } from './onboarding.types';
 
 @Injectable({ providedIn: 'root' })
@@ -88,6 +89,11 @@ export class OnboardingApiService {
       request,
       this.authOptions()
     );
+  }
+
+  /** Server-driven upload constraints. No auth required — public endpoint. */
+  getUploadPolicy(): Observable<UploadPolicy> {
+    return this.http.get<UploadPolicy>(this.url('/v1/upload-policy'));
   }
 
   listSettlementOptions(): Observable<SettlementOptionResponse[]> {

@@ -44,10 +44,12 @@ export interface PhoneOtpVerificationRequest {
 
 export interface PhoneOtpVerificationResponse {
   phoneVerified: boolean;
-  accessToken: string;
-  refreshToken?: string;
-  tokenType: string;
-  expiresInSeconds: number;
+  token: {
+    accessToken: string;
+    refreshToken?: string;
+    tokenType: string;
+    expiresInSeconds: number;
+  };
 }
 
 export interface AddressDto {
@@ -83,6 +85,8 @@ export interface MerchantResponse {
   ownerName?: string;
   phone?: string;
   email?: string;
+  // adding address dto to be able to populate when there is data on db already registerd
+  address?: AddressDto;
   status?: MerchantOnboardingStatus;
   plan?: 'FREE' | 'PRO';
   settlementBankCode?: BankCode;
@@ -108,7 +112,6 @@ export interface KycDocumentUploadResponse {
 }
 
 export interface KycSubmitRequest {
-  documentType: DocumentType;
   documentIds: string[];
 }
 
@@ -163,14 +166,18 @@ export interface OnboardingReviewResponse {
   transactionFeeLabel?: string;
 }
 
+/** Full onboarding state — kycRequirements is now embedded here */
 export interface OnboardingStateResponse {
   merchantId?: string;
   currentStep?: OnboardingStep;
   completedSteps?: OnboardingStep[];
   checklist?: OnboardingChecklistResponse;
   review?: OnboardingReviewResponse;
+  // Grouped KYC requirements returned with the state 
+  kycRequirements?: KycRequirementGroup[];
   blockers?: string[];
 }
+
 
 export interface OnboardingSubmitRequest {
   acceptTermsOfService: boolean;
@@ -184,4 +191,50 @@ export interface OnboardingSubmitResponse {
   currentStep: OnboardingStep;
   approvedAt?: string;
   nextActions?: string[];
+}
+
+// export interface UploadedKycFile {
+//   documentId: string;
+//   side: DocumentSide;
+//   fileName: string;
+//   fileUrl?: string;
+//   documentType: DocumentType;
+// }
+
+// export interface UploadPolicyResponse {
+//   maxFileSizeBytes: number;
+//   maxFileSizeLabel: string;
+//   allowedContentTypes: string[];
+// }
+
+/** ONE_OF = user picks exactly one option; ALL_OF = user must complete every option */
+export type KycSelectionMode = 'ONE_OF' | 'ALL_OF';
+
+/** A single document type option within a KYC requirement group */
+export interface KycDocumentOption {
+  documentType: DocumentType;
+  displayName: string;
+  requiredSides: DocumentSide[];
+  uploadedSides: DocumentSide[];
+  missingSides: DocumentSide[];
+  expiryDateRequired: boolean;
+  uploaded: boolean;
+  complete: boolean;
+}
+
+/** A KYC requirement group (e.g. "Identity document" or "Business license") */
+export interface KycRequirementGroup {
+  code: string;
+  displayName: string;
+  selectionMode: KycSelectionMode;
+  requiredCount: number;
+  satisfied: boolean;
+  options: KycDocumentOption[];
+}
+
+/** Server-driven upload constraints from GET /v1/upload-policy */
+export interface UploadPolicy {
+  maxFileSizeBytes: number;
+  maxFileSizeLabel: string;
+  allowedContentTypes: string[];
 }

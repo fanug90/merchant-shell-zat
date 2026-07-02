@@ -1,16 +1,20 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { NgTemplateOutlet} from '@angular/common';
 import {
   BankAccountResponse,
   BusinessType,
   DocumentSide,
   DocumentType,
-  KycDocumentRequirementResponse,
+  KycDocumentOption,
+  KycRequirementGroup,
+  MerchantResponse,
   OnboardingApiService,
   OnboardingSessionService,
   OnboardingStateResponse,
   OnboardingStep,
   SettlementOptionResponse,
+  UploadPolicy,
 } from '@zat-main-web/core-api';
 import {
   EsButtonComponent,
@@ -19,15 +23,20 @@ import {
   EsSpinnerComponent,
   EsStatusBadgeComponent,
 } from '@zat-main-web/shared-ui';
-import { forkJoin, of, switchMap } from 'rxjs';
+import { forkJoin, map, of, switchMap } from 'rxjs';
 
 type UiStep = 'phone' | 'business' | 'kyc' | 'settlement' | 'review' | 'done';
 
 interface UploadedKycFile {
   documentId: string;
+  documentType: DocumentType;
   side: DocumentSide;
+  fileUrl?: string;
   fileName: string;
 }
+
+/** Track which document type the user has selected per group code */
+type GroupSelection = Record<string, DocumentType>;
 
 @Component({
   selector: 'es-onboarding',
@@ -39,6 +48,7 @@ interface UploadedKycFile {
     EsEmptyStateComponent,
     EsSpinnerComponent,
     EsStatusBadgeComponent,
+    NgTemplateOutlet,
   ],
   template: `
     <main class="onboarding">
@@ -78,68 +88,85 @@ interface UploadedKycFile {
         @case ('phone') {
           <es-card title="Phone verification">
             <form class="grid" (ngSubmit)="requestOtp()">
-              <label>
+              <label for="phone-input">
                 Phone number
-                <input name="phone" required placeholder="+251912345678" [(ngModel)]="phone" />
+                <input
+                  id="phone-input"
+                  name="phone"
+                  required
+                  placeholder="+251912345678"
+                  autocomplete="tel"
+                  [(ngModel)]="phone"
+                />
               </label>
               <es-button type="submit" [disabled]="loading()">Send OTP</es-button>
             </form>
 
             <form class="grid verify" (ngSubmit)="verifyOtp()">
-              <label>
+              <label for="otp-input">
                 OTP code
-                <input name="otpCode" required maxlength="6" minlength="6" inputmode="numeric" placeholder="842190" [(ngModel)]="otpCode" />
+                <input
+                  id="otp-input"
+                  name="otpCode"
+                  required
+                  maxlength="6"
+                  minlength="6"
+                  inputmode="numeric"
+                  autocomplete="one-time-code"
+                  placeholder="842190"
+                  [(ngModel)]="otpCode"
+                />
               </label>
-              <es-button type="submit" variant="secondary" [disabled]="loading() || !otpRequested()">Verify and continue</es-button>
+              <es-button  type="submit" variant="secondary" [disabled]="loading() || !otpRequested()">Verify and continue</es-button>
             </form>
           </es-card>
         }
 
         @case ('business') {
-          <es-card title="Business details" subtitle="Create the merchant profile required by /v1/onboarding/business-details.">
-            <form class="form" (ngSubmit)="submitBusinessDetails()">
+          <es-card title="Business details" subtitle ="Provide your business information to create your merchant account.">
+            <form class="form"  (ngSubmit)="submitBusinessDetails()">
               <div class="two">
-                <label>
+                <label for="businessName">
                   Business name
-                  <input name="businessName" required [(ngModel)]="business.businessName" />
+                  <input id="businessName" name="businessName" required [(ngModel)]="business.businessName" />
                 </label>
-                <label>
+                <label for="businessNameAm">
                   Amharic business name
-                  <input name="businessNameAm" [(ngModel)]="business.businessNameAm" />
+                  <input id="businessNameAm" name="businessNameAm" [(ngModel)]="business.businessNameAm" />
                 </label>
               </div>
               <div class="two">
-                <label>
+                <label for="businessType">
                   Business type
-                  <select name="businessType" required [(ngModel)]="business.businessType">
+                  <select id="businessType" name="businessType" required [(ngModel)]="business.businessType">
                     @for (type of businessTypes; track type) {
                       <option [value]="type">{{ label(type) }}</option>
                     }
                   </select>
                 </label>
-                <label>
+                <label for="email">
                   Email
-                  <input name="email" type="email" [(ngModel)]="business.email" />
+                  <input id="email" name="email" type="email" autocomplete="email" [(ngModel)]="business.email" />
                 </label>
               </div>
               <div class="two">
-                <label>
+                <label for="city">
                   City
-                  <input name="city" [(ngModel)]="business.city" />
+                  <input id="city" name="city" [(ngModel)]="business.city" />
                 </label>
-                <label>
+                <label for="subcity">
                   Subcity
-                  <input name="subcity" [(ngModel)]="business.subcity" />
+                  <input id="subcity" name="subcity" [(ngModel)]="business.subcity" />
                 </label>
               </div>
               <div class="two">
-                <label>
+                <label for="woreda">
                   Woreda
-                  <input name="woreda" [(ngModel)]="business.woreda" />
+                  <input id="woreda" name="woreda" [(ngModel)]="business.woreda" />
                 </label>
-                <label>
+                <label for="revenue">
                   Estimated monthly revenue
-                  <input name="estimatedMonthlyRevenue" type="number" min="0" [(ngModel)]="business.estimatedMonthlyRevenue" />
+                  <input id="revenue" name="estimatedMonthlyRevenue" type="number" min="0" [(ngModel)]="business.estimatedMonthlyRevenue" />
                 </label>
               </div>
               <es-button type="submit" [disabled]="loading()">Save business details</es-button>
@@ -147,59 +174,192 @@ interface UploadedKycFile {
           </es-card>
         }
 
-        @case ('kyc') {
-          <es-card title="KYC documents" subtitle="Upload required sides, then submit the document set for review.">
-            @if (requirements().length === 0) {
-              <es-empty-state icon="description" title="No KYC requirements loaded" description="Verify your phone first, then this screen will load document requirements." />
+       @case ('kyc') {
+          <es-card title="KYC documents" subtitle="Upload required identity and business documents for review.">
+            @if (kycGroups().length === 0) {
+              <es-empty-state
+                icon="description"
+                title="No KYC requirements loaded"
+                description="Verify your phone first, then this screen will load document requirements."
+              />
             } @else {
-              <form class="form" (ngSubmit)="submitKyc()">
-                <label>
-                  Document type
-                  <select name="documentType" [(ngModel)]="selectedDocumentType">
-                    @for (requirement of enabledRequirements(); track requirement.documentType) {
-                      <option [value]="requirement.documentType">{{ requirement.displayName }}</option>
-                    }
-                  </select>
-                </label>
+              <div class="kyc-groups">
+                @for (group of kycGroups(); track group.code) {
+                  <section class="kyc-group" [attr.aria-labelledby]="'group-' + group.code">
+                    <!-- Group header -->
+                    <div class="kyc-group__header">
+                      <div>
+                        <h3 [id]="'group-' + group.code">{{ group.displayName }}</h3>
+                        <p class="kyc-group__meta">
+                          @if (group.selectionMode === 'ONE_OF') {
+                            Choose one of the following documents
+                          } @else {
+                            All of the following documents are required
+                          }
+                        </p>
+                      </div>
+                      @if (group.satisfied) {
+                        <es-status-badge label="Complete" tone="success" />
+                      } @else {
+                        <es-status-badge label="Incomplete" tone="warning" />
+                      }
+                    </div>
 
-                <section class="upload-grid">
-                  @for (side of selectedRequirement()?.requiredSides ?? []; track side) {
-                    <label class="upload">
-                      {{ side }}
-                      <input type="file" accept="image/*,.pdf" (change)="uploadKycFile(side, $event)" />
-                    </label>
-                  }
-                </section>
+                    <!-- ONE_OF: dropdown selector -->
+                    @if (group.selectionMode === 'ONE_OF') {
+                      <label [for]="'select-' + group.code" class="doc-select-label">
+                        Document type
+                        <select
+                          [id]="'select-' + group.code"
+                          [name]="'doc-type-' + group.code"
+                          [attr.aria-label]="'Choose document type for ' + group.displayName"
+                          (change)="selectDocumentType(group.code, $any($event.target).value)"
+                        >
+                          @for (option of group.options; track option.documentType) {
+                            <option
+                              [value]="option.documentType"
+                              [selected]="groupSelections()[group.code] === option.documentType"
+                            >
+                              {{ option.displayName }}
+                              @if (isOptionComplete(option)) { ✓ }
+                            </option>
+                          }
+                        </select>
+                      </label>
 
-                @if (uploadedFiles().length) {
-                  <ul class="uploads">
-                    @for (file of uploadedFiles(); track file.side + file.fileName) {
-                      <li>{{ file.side }} · {{ file.fileName }}</li>
+                      <!-- Upload area for the selected option -->
+                      @if (selectedOption(group); as option) {
+                        <div class="upload-area">
+                          <ng-container *ngTemplateOutlet="sideUploads; context: { option, group }" />
+                        </div>
+                      }
                     }
-                  </ul>
+
+                    <!-- ALL_OF: dropdown locked to the single required option, ready for future types -->
+                    @if (group.selectionMode === 'ALL_OF') {
+                      @for (option of group.options; track option.documentType) {
+                        <div class="upload-area all-of">
+                          <label [for]="'select-allof-' + option.documentType" class="doc-select-label">
+                            Document type
+                            <select
+                              [id]="'select-allof-' + option.documentType"
+                              disabled
+                              [attr.aria-label]="option.displayName + ' (required)'"
+                            >
+                              <option [value]="option.documentType" selected>{{ option.displayName }}</option>
+                            </select>
+                          </label>
+                          @if (isOptionComplete(option)) {
+                            <div class="upload-area__status">
+                              <es-status-badge label="Complete" tone="success" />
+                            </div>
+                          } @else if (uploadedSidesCount(option) > 0) {
+                            <div class="upload-area__status">
+                              <es-status-badge [label]="uploadedSidesCount(option) + '/' + option.requiredSides.length + ' sides'" tone="warning" />
+                            </div>
+                          }
+                          <ng-container *ngTemplateOutlet="sideUploads; context: { option, group }" />
+                        </div>
+                      }
+                    }
+
+                  <!-- Uploaded files summary — one block per group showing all sides with clickable URLs -->
+         
+                     @if (groupUploadedFiles(group).length > 0) {
+                      <div
+                        class="uploaded-summary"
+                        [attr.aria-label]="group.displayName + ' uploaded files'"
+                      >
+                        <p class="uploaded-summary__title">{{ group.displayName }} — uploaded files</p>
+                        <ul class="uploaded-summary__list">
+                          @for (entry of groupUploadedFiles(group); track entry.side) {
+                            <li>
+                              <span class="uploaded-summary__side">{{ entry.side }}:</span>
+                              <a
+                                [href]="entry.fileUrl"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                class="uploaded-summary__link"
+                                [attr.aria-label]="entry.side + ' — ' + entry.fileName + ' (opens in new tab)'"
+                              >
+                                {{ entry.fileUrl }}
+                                <span aria-hidden="true"> ↗</span>
+                              </a>
+                            </li>
+                          }
+                        </ul>
+                      </div>
+                    }
+
+                  </section>
                 }
+              </div>
 
-                <es-button type="submit" [disabled]="loading() || uploadedDocumentIds().length === 0">Submit KYC</es-button>
-              </form>
+
+              <!-- Upload policy hint -->
+              @if (uploadPolicy(); as policy) {
+                <p class="upload-hint" aria-live="polite">
+                  Accepted formats: {{ allowedFormatsLabel(policy) }} · Max size: {{ policy.maxFileSizeLabel }}
+                </p>
+              }
+
+              <!-- Submit all KYC -->
+              <div class="kyc-submit">
+                <es-button
+                  [disabled]="loading() || !allGroupsSatisfied()"
+                  (click)="submitAllKyc()"
+                >
+                  Submit KYC documents
+                </es-button>
+              </div>
             }
           </es-card>
+
+          <ng-template #sideUploads let-option="option" let-group="group">
+            <div class="side-uploads">
+              @for (side of option.requiredSides; track side) {
+                <div class="side-upload" [class.side-upload--done]="isSideUploaded(option.documentType, side)">
+                  <div class="side-upload__meta">
+                    <span class="side-label">{{ side }}</span>
+                    @if (isSideUploaded(option.documentType, side)) {
+                      <span class="side-done" aria-label="Uploaded">✓</span>
+                    }
+                  </div>
+                  <label [for]="'file-' + option.documentType + '-' + side" class="file-label">
+                    <span>{{ isSideUploaded(option.documentType, side) ? 'Replace file' : 'Choose file' }}</span>
+                    <input
+                      [id]="'file-' + option.documentType + '-' + side"
+                      type="file"
+                      [accept]="acceptAttr()"
+                      [attr.aria-label]="option.displayName + ' ' + side + ' side'"
+                      (change)="onFileChange(option, side, $event)"
+                    />
+                  </label>
+                 
+                  @if (fileErrors()[option.documentType + '-' + side]; as err) {
+                    <p class="file-error" role="alert">{{ err }}</p>
+                  }
+                </div>
+              }
+            </div>
+          </ng-template>
         }
 
         @case ('settlement') {
           <es-card title="Settlement account" subtitle="Link a bank or wallet account, then select it as the default settlement account.">
             <form class="form" (ngSubmit)="linkSettlementAccount()">
               <div class="two">
-                <label>
+                <label for="bankCode">
                   Bank or wallet
-                  <select name="bankCode" required [(ngModel)]="settlement.bankCode">
+                  <select id="bankCode" name="bankCode" required [(ngModel)]="settlement.bankCode">
                     @for (option of settlementOptions(); track option.code) {
                       <option [value]="option.code">{{ option.displayName }}</option>
                     }
                   </select>
                 </label>
-                <label>
+                <label for="accountNumber">
                   Account number
-                  <input name="accountNumber" required [(ngModel)]="settlement.accountNumber" />
+                  <input id="accountNumber" name="accountNumber" required [(ngModel)]="settlement.accountNumber" />
                 </label>
               </div>
               <label class="checkbox">
@@ -212,7 +372,12 @@ interface UploadedKycFile {
             @if (bankAccounts().length) {
               <div class="accounts">
                 @for (account of bankAccounts(); track account.id) {
-                  <button type="button" [class.selected]="selectedBankAccountId() === account.id" (click)="selectSettlementAccount(account)">
+                  <button
+                    type="button"
+                    [class.selected]="selectedBankAccountId() === account.id"
+                    (click)="selectSettlementAccount(account)"
+                    [attr.aria-pressed]="selectedBankAccountId() === account.id"
+                  >
                     <strong>{{ account.bankName || account.bankCode }}</strong>
                     <span>{{ account.accountNumber }}</span>
                     @if (account.defaultAccount) {
@@ -306,6 +471,7 @@ interface UploadedKycFile {
         color: var(--es-color-accent-dark);
         font-weight: 700;
         text-decoration: none;
+        white-space: nowrap;
       }
 
       .eyebrow {
@@ -366,7 +532,7 @@ interface UploadedKycFile {
         font-weight: 800;
         height: 1.5rem;
         justify-content: center;
-        width: 1.5rem;
+        min-width: 1.5rem;
       }
 
       .grid,
@@ -394,7 +560,7 @@ interface UploadedKycFile {
         gap: 0.375rem;
       }
 
-      input,
+      input:not([type='radio']):not([type='checkbox']):not([type='file']),
       select {
         background: white;
         border: 1px solid #cbd8e7;
@@ -403,7 +569,7 @@ interface UploadedKycFile {
         padding: 0 0.75rem;
       }
 
-      input:focus,
+      input:not([type='radio']):not([type='checkbox']):not([type='file']):focus,
       select:focus {
         border-color: var(--es-color-accent);
         box-shadow: 0 0 0 3px rgba(0, 168, 121, 0.14);
@@ -441,26 +607,311 @@ interface UploadedKycFile {
         border: 1px solid var(--es-color-border);
         border-radius: var(--es-radius-sm);
         padding: 1rem;
+        margin: 0 auto 1rem;
+        max-width: 72rem;
       }
 
-      .upload-grid,
-      .accounts,
-      .review {
+         /* ── KYC groups ───────────────────────────────── */
+
+      .kyc-groups {
         display: grid;
-        gap: 0.75rem;
-        grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+        gap: 1.5rem;
       }
 
-      .upload {
-        border: 1px dashed var(--es-color-border);
+      .kyc-group {
+        border: 1px solid var(--es-color-border);
+        border-radius: var(--es-radius-md);
+        padding: 1.25rem;
+      }
+
+      .kyc-group__header {
+        align-items: flex-start;
+        display: flex;
+        gap: 1rem;
+        justify-content: space-between;
+        margin-bottom: 1rem;
+      }
+
+      .kyc-group__header h3 {
+        color: var(--es-color-neutral-900);
+        font-size: 1rem;
+        margin: 0 0 0.25rem;
+      }
+
+      .kyc-group__meta {
+        color: var(--es-color-neutral-600);
+        font-size: 0.8125rem;
+        font-weight: 400;
+        margin: 0;
+      }
+
+      /* ── Document type dropdown ───────────────────── */
+
+      .doc-select-label {
+        color: var(--es-color-neutral-700);
+        display: grid;
+        font-size: 0.875rem;
+        font-weight: 650;
+        gap: 0.375rem;
+        margin-bottom: 1rem;
+      }
+
+      .doc-select-label select {
+        background: white;
+        border: 1px solid #cbd8e7;
+        border-radius: var(--es-radius-sm);
+        min-height: 2.75rem;
+        padding: 0 0.75rem;
+      }
+
+      .doc-select-label select:focus {
+        border-color: var(--es-color-accent);
+        box-shadow: 0 0 0 3px rgba(0, 168, 121, 0.14);
+        outline: 0;
+      }
+
+      .doc-select-label select:disabled {
+        background: var(--es-color-neutral-100);
+        color: var(--es-color-neutral-700);
+        cursor: not-allowed;
+        opacity: 0.8;
+      }
+
+      /* ── Upload area ─────────────────────────────── */
+
+      .upload-area {
+        background: var(--es-color-neutral-100);
         border-radius: var(--es-radius-sm);
         padding: 1rem;
       }
 
-      .uploads,
-      .blockers {
+      .upload-area.all-of {
+        margin-bottom: 0.75rem;
+      }
+
+      .upload-area__status {
+        margin-bottom: 0.75rem;
+      }
+
+      .side-uploads {
+        display: grid;
+        gap: 0.75rem;
+        grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+      }
+
+      .side-upload {
+        background: white;
+        border: 1px solid var(--es-color-border);
+        border-radius: var(--es-radius-sm);
+        display: grid;
+        gap: 0.5rem;
+        padding: 0.875rem;
+      }
+
+      .side-upload--done {
+        border-color: var(--es-color-accent);
+      }
+
+      .side-upload__meta {
+        align-items: center;
+        display: flex;
+        gap: 0.5rem;
+        justify-content: space-between;
+      }
+
+      .side-label {
+        color: var(--es-color-neutral-700);
+        font-size: 0.8125rem;
+        font-weight: 800;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+
+      .side-done {
+        color: var(--es-color-accent-dark);
+        font-weight: 800;
+      }
+
+      .file-label {
+        cursor: pointer;
+        display: block;
+        font-weight: 400;
+      }
+
+      .file-label span {
+        align-items: center;
+        background: white;
+        border: 1px dashed var(--es-color-border);
+        border-radius: var(--es-radius-sm);
+        color: var(--es-color-primary);
+        display: flex;
+        font-size: 0.8125rem;
+        font-weight: 700;
+        justify-content: center;
+        min-height: 2.25rem;
+        padding: 0 0.75rem;
+        transition: background-color 120ms ease, border-color 120ms ease;
+      }
+
+      .file-label:hover span {
+        background: rgba(0, 128, 251, 0.05);
+        border-color: var(--es-color-primary);
+      }
+
+      .file-label input[type='file'] {
+        height: 0;
+        opacity: 0;
+        position: absolute;
+        width: 0;
+      }
+
+      .expiry-label {
+        color: var(--es-color-neutral-700);
+        display: grid;
+        font-size: 0.8125rem;
+        font-weight: 650;
+        gap: 0.25rem;
+      }
+
+      .expiry-label input[type='date'] {
+        background: white;
+        border: 1px solid #cbd8e7;
+        border-radius: var(--es-radius-sm);
+        min-height: 2.25rem;
+        padding: 0 0.625rem;
+      }
+
+      .file-error {
+        color: #9b1c1c;
+        font-size: 0.8125rem;
         margin: 0;
-        padding-left: 1.25rem;
+      }
+
+      /* ── Upload hint & submit ─────────────────────── */
+
+      .upload-hint {
+        color: var(--es-color-neutral-600);
+        font-size: 0.8125rem;
+        margin: 1rem 0 0;
+      }
+
+      .kyc-submit {
+        border-top: 1px solid var(--es-color-border);
+        margin-top: 1.25rem;
+        padding-top: 1.25rem;
+      }
+
+      .file-error {
+         color: #9b1c1c;
+          font-size: 0.8125rem;
+           margin: 0;
+     }
+
+      /* Per-side uploaded file link (inside each side-upload card) */
+      .uploaded-file-link {
+        align-items: center;
+        background: rgba(0, 168, 121, 0.06);
+        border: 1px solid rgba(0, 168, 121, 0.2);
+        border-radius: var(--es-radius-sm);
+        color: var(--es-color-accent-dark);
+        display: flex;
+        font-size: 0.8125rem;
+        font-weight: 600;
+        gap: 0.375rem;
+        overflow: hidden;
+        padding: 0.375rem 0.5rem;
+        text-decoration: none;
+        transition: background-color 120ms ease, border-color 120ms ease;
+      }
+
+      .uploaded-file-link:hover {
+        background: rgba(0, 168, 121, 0.12);
+        border-color: var(--es-color-accent);
+      }
+
+      .uploaded-file-link:focus-visible {
+        outline: 3px solid rgba(0, 168, 121, 0.35);
+        outline-offset: 2px;
+      }
+
+      .uploaded-file-link__icon { flex-shrink: 0; font-size: 0.875rem; }
+
+      .uploaded-file-link__name {
+        flex: 1;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .uploaded-file-link__arrow { flex-shrink: 0; font-size: 0.75rem; opacity: 0.7; }
+
+      /* Uploaded files summary list — below each group */
+      .uploaded-summary {
+        background: var(--es-color-neutral-100);
+        border: 1px solid var(--es-color-border);
+        border-radius: var(--es-radius-sm);
+        margin-top: 0.75rem;
+        padding: 0.875rem 1rem;
+      }
+
+      .uploaded-summary__title {
+        color: var(--es-color-neutral-700);
+        font-size: 0.8125rem;
+        font-weight: 800;
+        letter-spacing: 0.04em;
+        margin: 0 0 0.625rem;
+        text-transform: uppercase;
+      }
+
+      .uploaded-summary__list {
+        display: grid;
+        gap: 0.5rem;
+        list-style: none;
+        margin: 0;
+        padding: 0;
+      }
+
+      .uploaded-summary__list li {
+        align-items: baseline;
+        display: flex;
+        gap: 0.5rem;
+      }
+
+      .uploaded-summary__side {
+        color: var(--es-color-neutral-700);
+        flex-shrink: 0;
+        font-size: 0.8125rem;
+        font-weight: 800;
+        letter-spacing: 0.06em;
+        min-width: 3.5rem;
+        text-transform: uppercase;
+      }
+
+      .uploaded-summary__link {
+        color: var(--es-color-primary);
+        font-size: 0.8125rem;
+        font-weight: 500;
+        overflow: hidden;
+        text-decoration: underline;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        word-break: break-all;
+      }
+
+      .uploaded-summary__link:hover { color: var(--es-color-primary-hover); }
+
+      .uploaded-summary__link:focus-visible {
+        outline: 3px solid rgba(26, 86, 219, 0.35);
+        outline-offset: 2px;
+      }
+
+      /* ── Settlement ───────────────────────────────── */
+
+      .accounts {
+        display: grid;
+        gap: 0.75rem;
+        grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+        margin-top: 1rem;
       }
 
       .accounts button {
@@ -479,6 +930,15 @@ interface UploadedKycFile {
         box-shadow: 0 0 0 3px rgba(0, 168, 121, 0.14);
       }
 
+      /* ── Review ───────────────────────────────────── */
+
+      .review {
+        display: grid;
+        gap: 0.75rem;
+        grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+        margin-bottom: 1rem;
+      }
+
       .review div {
         background: var(--es-color-neutral-100);
         border-radius: var(--es-radius-sm);
@@ -489,6 +949,25 @@ interface UploadedKycFile {
         color: var(--es-color-neutral-600);
         display: block;
         font-size: 0.8125rem;
+      }
+
+      .blockers {
+        margin: 0 0 1rem;
+        padding-left: 1.25rem;
+      }
+
+      /* ── Accessibility ────────────────────────────── */
+
+      .sr-only {
+        border: 0;
+        clip: rect(0 0 0 0);
+        height: 1px;
+        margin: -1px;
+        overflow: hidden;
+        padding: 0;
+        position: absolute;
+        white-space: nowrap;
+        width: 1px;
       }
 
       @media (max-width: 760px) {
@@ -503,6 +982,11 @@ interface UploadedKycFile {
 
         .progress,
         .two {
+          grid-template-columns: 1fr;
+        }
+
+        .doc-options,
+        .side-uploads {
           grid-template-columns: 1fr;
         }
       }
@@ -537,16 +1021,26 @@ export class OnboardingComponent {
   readonly message = signal('');
   readonly error = signal('');
   readonly state = signal<OnboardingStateResponse | null>(null);
-  readonly requirements = signal<KycDocumentRequirementResponse[]>([]);
   readonly settlementOptions = signal<SettlementOptionResponse[]>([]);
   readonly bankAccounts = signal<BankAccountResponse[]>([]);
-  readonly uploadedFiles = signal<UploadedKycFile[]>([]);
   readonly selectedBankAccountId = signal<string | null>(null);
   readonly approvalMessage = signal('Your merchant onboarding request has been submitted.');
+  readonly uploadPolicy = signal<UploadPolicy | null>(null);
+
+  /** Which document type is selected per group code (for ONE_OF groups) */
+  readonly groupSelections = signal<GroupSelection>({});
+
+  /** All uploaded files, keyed by documentType + side */
+  readonly uploadedFiles = signal<UploadedKycFile[]>([]);
+
+  /** Per-field validation error messages, keyed by "documentType-side" */
+  readonly fileErrors = signal<Record<string, string>>({});
+
+  /** Expiry dates keyed by documentType */
+  // readonly expiryDates: Record<string, string> = {};
 
   phone = '+251';
   otpCode = '';
-  selectedDocumentType: DocumentType = 'KEBELE_ID';
 
   business = {
     businessName: '',
@@ -571,15 +1065,240 @@ export class OnboardingComponent {
     nbe: false,
   };
 
-  readonly enabledRequirements = computed(() =>
-    this.requirements().filter((requirement) => requirement.enabled)
+  /** KYC requirement groups from the onboarding state */
+  readonly kycGroups = computed<KycRequirementGroup[]>(
+    () => this.state()?.kycRequirements ?? []
   );
-  readonly selectedRequirement = computed(() =>
-    this.enabledRequirements().find((item) => item.documentType === this.selectedDocumentType)
+
+  /** The accept attribute value derived from the upload policy */
+  readonly acceptAttr = computed<string>(() => {
+    const policy = this.uploadPolicy();
+    return policy ? policy.allowedContentTypes.join(',') : 'application/pdf,image/jpeg,image/png,image/webp';
+  });
+
+  // ── Helpers ──────────────────────────────────────────────────────────────
+
+    /** True when the minimum required business fields are filled. */
+
+   businessFormValid(): boolean {
+    return this.business.businessName.trim().length > 0;
+  }
+
+isOptionComplete(option: KycDocumentOption): boolean {
+  return option.requiredSides.every((side) =>
+    this.isSideUploaded(option.documentType, side)
   );
-  readonly uploadedDocumentIds = computed(() => [
-    ...new Set(this.uploadedFiles().map((file) => file.documentId)),
-  ]);
+}
+
+uploadedSidesCount(option: KycDocumentOption): number {
+  return option.requiredSides.filter((side) =>
+    this.isSideUploaded(option.documentType, side)
+  ).length;
+}
+
+uploadedFileFor(documentType: DocumentType, side: DocumentSide): UploadedKycFile | undefined {
+  return this.uploadedFiles().find(
+    (f) => f.documentType === documentType && f.side === side
+  );
+}
+
+  selectedOption(group: KycRequirementGroup): KycDocumentOption | undefined {
+    const selected = this.groupSelections()[group.code];
+    return group.options.find((o) => o.documentType === selected);
+  }
+
+  isSideUploaded(documentType: DocumentType, side: DocumentSide): boolean {
+    return this.uploadedFiles().some(
+      (f) => f.documentType === documentType && f.side === side
+    );
+  }
+
+    /**
+   * Returns all locally-tracked uploaded files that belong to a given group,
+   * so the summary list below each group shows every uploaded side with its URL.
+   */
+  groupUploadedFiles(group: KycRequirementGroup): UploadedKycFile[] {
+    const groupDocumentTypes = new Set(group.options.map((o) => o.documentType));
+    return this.uploadedFiles().filter((f) => groupDocumentTypes.has(f.documentType));
+  }
+
+  // allGroupsHaveUploads(): boolean {
+  //   return this.kycGroups().every((group) => {
+  //     if (group.selectionMode === 'ONE_OF') {
+  //       const selected = this.groupSelections()[group.code];
+  //       if (!selected) return false;
+  //       const option = group.options.find((o) => o.documentType === selected);
+  //       if (!option) return false;
+  //       return option.requiredSides.every((side) => this.isSideUploaded(selected, side));
+  //     }
+  //     // ALL_OF
+  //     return group.options.every((option) =>
+  //       option.requiredSides.every((side) => this.isSideUploaded(option.documentType, side))
+  //     );
+  //   });
+  // }
+
+   allGroupsSatisfied(): boolean {
+    const groups = this.kycGroups();
+    return groups.length > 0 && groups.every((g) => g.satisfied);
+  }
+
+  allowedFormatsLabel(policy: UploadPolicy): string {
+    return policy.allowedContentTypes
+      .map((mime) => mime.split('/')[1]?.toUpperCase() ?? mime)
+      .join(', ');
+  }
+
+  // ── Actions ──────────────────────────────────────────────────────────────
+
+  selectDocumentType(groupCode: string, documentType: DocumentType): void {
+    this.groupSelections.update((prev) => ({ ...prev, [groupCode]: documentType }));
+  }
+
+  onFileChange(option: KycDocumentOption, side: DocumentSide, event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+
+    const key = `${option.documentType}-${side}`;
+
+    // Client-side validation against upload policy
+    const policy = this.uploadPolicy();
+    if (policy) {
+      if (file.size > policy.maxFileSizeBytes) {
+        this.fileErrors.update((e) => ({
+          ...e,
+          [key]: `File exceeds the ${policy.maxFileSizeLabel} size limit.`,
+        }));
+        input.value = '';
+        return;
+      }
+      if (!policy.allowedContentTypes.includes(file.type)) {
+        this.fileErrors.update((e) => ({
+          ...e,
+          [key]: `Only ${this.allowedFormatsLabel(policy)} files are accepted.`,
+        }));
+        input.value = '';
+        return;
+      }
+    }
+
+    // Clear any prior error for this field
+    this.fileErrors.update((e) => {
+      const next = { ...e };
+      delete next[key];
+      return next;
+    });
+
+    this.run(() =>
+      this.api
+        .uploadKycDocument(option.documentType, side, file)
+        .pipe(
+          switchMap((response) => {
+            // Record the upload locally first so the file name/id is available
+            this.uploadedFiles.update((files) => [
+              ...files.filter(
+                (f) => !(f.documentType === option.documentType && f.side === side)
+              ),
+              {
+                documentId: response.documentId,
+                documentType: option.documentType,
+                side: response.side,
+                fileName: response.fileName,
+                fileUrl: response.fileUrl,
+              },
+            ]);
+            // Then refresh state so the server's uploadedSides/complete/satisfied
+            return this.refreshState();
+          })
+        )
+        .subscribe({
+          next: () => {
+            this.message.set(`${option.displayName} ${side} uploaded.`);
+          },
+          error: (err: unknown) => this.showError(err),
+          complete: () => this.loading.set(false),
+        })
+    );
+
+    // this.run(() =>
+    //   this.api.uploadKycDocument(option.documentType, side, file)
+    // // .pipe(
+    // //     switchMap((response) => this.refreshState().pipe(map(() => response)))
+    // //   )
+    //   .subscribe({
+    //     next: (response) => {
+    //       this.uploadedFiles.update((files) => [
+    //         ...files.filter(
+    //           (f) => !(f.documentType === option.documentType && f.side === side)
+    //         ),
+    //         {
+    //           documentId: response.documentId,
+    //           documentType: option.documentType,
+    //           side: response.side,
+    //           fileName: response.fileName,
+    //           fileUrl: response.fileUrl,
+    //         },
+    //       ]);
+    //       this.message.set(`${option.displayName} ${side} uploaded.`);
+    //     },
+    //     error: (err: unknown) => this.showError(err),
+    //     complete: () => this.loading.set(false),
+    //   })
+    // );
+  }
+
+  submitAllKyc(): void {
+    const allDocumentIds = [...new Set(this.uploadedFiles().map((f) => f.documentId))];
+
+    if (allDocumentIds.length === 0) {
+        this.error.set('No documents found to submit. Please upload all required documents first.');
+        return;
+    }
+      
+    this.run(() =>
+      this.api
+        .submitKyc({ documentIds: allDocumentIds })
+        .pipe(switchMap(() => this.refreshState()))
+        .subscribe({
+          next: () => {
+            this.message.set('KYC submitted for review.');
+            this.step.set('settlement');
+          },
+          error: (err: unknown) => this.showError(err),
+          complete: () => this.loading.set(false),
+        })
+    );
+  }
+
+  // submitAllKyc(): void {
+  //   // Build one submit request per distinct documentType that has uploads
+  //   const uploadsByType = new Map<DocumentType, string[]>();
+  //   for (const file of this.uploadedFiles()) {
+  //     const existing = uploadsByType.get(file.documentType) ?? [];
+  //     uploadsByType.set(file.documentType, [...existing, file.documentId]);
+  //   }
+
+  //   if (uploadsByType.size === 0) return;
+
+  //   // Submit sequentially using the first documentType for now;
+  //   // extend to parallel forkJoin if the API supports multiple submissions.
+  //   const [firstType, firstIds] = [...uploadsByType.entries()][0]!;
+
+  //   this.run(() =>
+  //     this.api
+  //       .submitKyc({ documentType: firstType, documentIds: firstIds })
+  //       .pipe(switchMap(() => this.refreshState()))
+  //       .subscribe({
+  //         next: () => {
+  //           this.message.set('KYC submitted for review.');
+  //           this.step.set('settlement');
+  //         },
+  //         error: (err: unknown) => this.showError(err),
+  //         complete: () => this.loading.set(false),
+  //       })
+  //   );
+  // }
 
   requestOtp(): void {
     this.run(() =>
@@ -587,10 +1306,10 @@ export class OnboardingComponent {
         next: (response) => {
           this.otpRequested.set(true);
           this.message.set(
-            `OTP accepted for ${response.phone}. Resend available after ${response.resendAfterSeconds} seconds.`
+            `OTP sent to ${response.phone}. Resend available after ${response.resendAfterSeconds}s.`
           );
         },
-        error: (error) => this.showError(error),
+        error: (err: unknown) => this.showError(err),
         complete: () => this.loading.set(false),
       })
     );
@@ -605,20 +1324,23 @@ export class OnboardingComponent {
             this.session.setVerification(this.phone, response);
             return forkJoin({
               state: this.api.getOnboardingState(),
-              requirements: this.api.listKycRequirements(),
+              uploadPolicy: this.api.getUploadPolicy(),
               settlementOptions: this.api.listSettlementOptions(),
               // bankAccounts: this.api.listBankAccounts(),
             });
           })
         )
         .subscribe({
-          next: ({ state, requirements, settlementOptions }) => {
+          next: ({ state, uploadPolicy, settlementOptions }) => {
             this.state.set(state);
-            this.requirements.set(requirements);
-            this.setDefaultDocumentType(requirements);
+            this.uploadPolicy.set(uploadPolicy);
+            this.initGroupSelections(state.kycRequirements ?? []);
             this.settlementOptions.set(settlementOptions);
             this.setDefaultSettlementOption(settlementOptions);
             // this.bankAccounts.set(bankAccounts);
+
+             // Populate  the business form if the DB already has data
+            this.hydrateBusiness(state);
 
             // Determine UI step from backend state; fallback to 'business'
             const uiStep = this.mapServerStepToUiStep(state?.currentStep) ?? 'business';
@@ -631,15 +1353,18 @@ export class OnboardingComponent {
             }
 
             this.step.set(uiStep);
+
+            // this.message.set('Phone verified. Continue with business details.');
+            // this.step.set('business');
           },
-          error: (error) => this.showError(error),
+          error: (err: unknown) => this.showError(err),
           complete: () => this.loading.set(false),
         })
     );
   }
 
   submitBusinessDetails(): void {
-    this.run(() => 
+    this.run(() =>
       this.api
         .submitBusinessDetails({
           businessName: this.business.businessName,
@@ -655,53 +1380,12 @@ export class OnboardingComponent {
         })
         .pipe(switchMap(() => this.refreshState()))
         .subscribe({
-          next: () => {
+          next: (state) => {
+            this.hydrateBusiness(state);
             this.message.set('Business details saved.');
             this.step.set('kyc');
           },
-          error: (error) => this.showError(error),
-          complete: () => this.loading.set(false),
-        })
-    );
-  }
-
-  uploadKycFile(side: DocumentSide, event: Event): void {
-    const input = event.target as HTMLInputElement;
-    const file = input.files?.[0];
-
-    if (!file) {
-      return;
-    }
-
-    this.run(() =>
-      this.api.uploadKycDocument(this.selectedDocumentType, side, file).subscribe({
-        next: (response) => {
-          this.uploadedFiles.update((files) => [
-            ...files.filter((item) => item.side !== side),
-            { documentId: response.documentId, side: response.side, fileName: response.fileName },
-          ]);
-          this.message.set(`${side} uploaded.`);
-        },
-        error: (error) => this.showError(error),
-        complete: () => this.loading.set(false),
-      })
-    );
-  }
-
-  submitKyc(): void {
-    this.run(() =>
-      this.api
-        .submitKyc({
-          documentType: this.selectedDocumentType,
-          documentIds: this.uploadedDocumentIds(),
-        })
-        .pipe(switchMap(() => this.refreshState()))
-        .subscribe({
-          next: () => {
-            this.message.set('KYC submitted for review.');
-            this.step.set('settlement');
-          },
-          error: (error) => this.showError(error),
+          error: (err: unknown) => this.showError(err),
           complete: () => this.loading.set(false),
         })
     );
@@ -731,11 +1415,13 @@ export class OnboardingComponent {
         .subscribe({
           next: ({ accounts }) => {
             this.bankAccounts.set(accounts);
-            this.selectedBankAccountId.set(accounts.find((item) => item.defaultAccount)?.id ?? null);
+            this.selectedBankAccountId.set(
+              accounts.find((a) => a.defaultAccount)?.id ?? null
+            );
             this.message.set('Settlement account linked.');
             this.step.set('review');
           },
-          error: (error) => this.showError(error),
+          error: (err: unknown) => this.showError(err),
           complete: () => this.loading.set(false),
         })
     );
@@ -759,7 +1445,7 @@ export class OnboardingComponent {
             this.selectedBankAccountId.set(account.id);
             this.message.set('Default settlement account selected.');
           },
-          error: (error) => this.showError(error),
+          error: (err: unknown) => this.showError(err),
           complete: () => this.loading.set(false),
         })
     );
@@ -780,24 +1466,19 @@ export class OnboardingComponent {
             );
             this.step.set('done');
           },
-          error: (error) => this.showError(error),
+          error: (err: unknown) => this.showError(err),
           complete: () => this.loading.set(false),
         })
     );
   }
 
   canVisit(target: UiStep): boolean {
-    if (target === 'phone') {
-      return true;
-    }
-
+    if (target === 'phone') return true;
     return Boolean(this.session.accessToken());
   }
 
   goTo(target: UiStep): void {
-    if (this.canVisit(target)) {
-      this.step.set(target);
-    }
+    if (this.canVisit(target)) this.step.set(target);
   }
 
   allConsentsAccepted(): boolean {
@@ -816,21 +1497,37 @@ export class OnboardingComponent {
     window.location.assign('/login');
   }
 
-  private refreshState() {
-    return this.api.getOnboardingState().pipe(
-      switchMap((state) => {
-        this.state.set(state);
-        // If backend returned a current step, update the UI to match it
-        // const uiStep = this.mapServerStepToUiStep(state?.currentStep);
-        // if (uiStep) {
-        //   this.step.set(uiStep);
-        // }
-        return of(state);
-      })
-    );
+  // ── Private helpers ───────────────────────────────────────────────────────
+
+    private hydrateBusiness(state: OnboardingStateResponse): void {
+    const merchant = state.review?.merchant;
+    if (!merchant?.businessName) return;
+
+    this.business.businessName  = merchant.businessName;
+    this.business.businessNameAm = merchant.businessNameAm ?? '';
+    this.business.businessType  = merchant.businessType ?? this.business.businessType;
+    this.business.email         = merchant.email ?? '';
+    this.business.city = merchant.address?.city ?? this.business.city;
+    this.business.subcity = merchant.address?.subcity ?? this.business.subcity;
+    this.business.woreda = merchant.address?.woreda ?? this.business.woreda;
+
+    const money = merchant.estimatedMonthlyRevenue;
+    this.business.estimatedMonthlyRevenue       = money?.amount ?? null;
+
+
   }
 
-  private mapServerStepToUiStep(serverStep?: OnboardingStep): UiStep | null {
+  private initGroupSelections(groups: KycRequirementGroup[]): void {
+    const selections: GroupSelection = {};
+    for (const group of groups) {
+      if (group.selectionMode === 'ONE_OF' && group.options[0]) {
+        selections[group.code] = group.options[0].documentType;
+      }
+    }
+    this.groupSelections.set(selections);
+  }
+
+    private mapServerStepToUiStep(serverStep?: OnboardingStep): UiStep | null {
     switch (serverStep) {
       case 'PHONE_VERIFY':
         return 'phone';
@@ -849,6 +1546,15 @@ export class OnboardingComponent {
     }
   }
 
+  private refreshState() {
+    return this.api.getOnboardingState().pipe(
+      switchMap((state) => {
+        this.state.set(state);
+        return of(state);
+      })
+    );
+  }
+
   private run(start: () => void): void {
     this.error.set('');
     this.message.set('');
@@ -858,22 +1564,15 @@ export class OnboardingComponent {
 
   private showError(error: unknown): void {
     const maybeHttpError = error as { error?: { message?: string }; message?: string };
-    this.error.set(maybeHttpError.error?.message ?? maybeHttpError.message ?? 'The onboarding request failed.');
-  }
-
-  private setDefaultDocumentType(requirements: KycDocumentRequirementResponse[]): void {
-    const defaultRequirement = requirements.find((requirement) => requirement.enabled);
-
-    if (defaultRequirement) {
-      this.selectedDocumentType = defaultRequirement.documentType;
-    }
+    this.error.set(
+      maybeHttpError.error?.message ?? maybeHttpError.message ?? 'The request failed.'
+    );
+    this.loading.set(false);
   }
 
   private setDefaultSettlementOption(options: SettlementOptionResponse[]): void {
-    const defaultOption = options[0];
-
-    if (defaultOption) {
-      this.settlement.bankCode = defaultOption.code;
-    }
+    const first = options[0];
+    if (first) this.settlement.bankCode = first.code;
   }
+
 }
