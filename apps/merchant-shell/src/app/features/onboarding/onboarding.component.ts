@@ -3,6 +3,7 @@ import {
   Component,
   computed,
   DestroyRef,
+  effect,
   inject,
   signal,
 } from '@angular/core';
@@ -13,7 +14,9 @@ import {
   BusinessType,
   DocumentSide,
   DocumentType,
+  KycDocumentFile,
   KycDocumentOption,
+  KycDocumentRecord,
   KycRequirementGroup,
   MerchantResponse,
   OnboardingApiService,
@@ -456,14 +459,20 @@ type GroupSelection = Record<string, DocumentType>;
                     {{ kycSubmitError() }}
                   </p>
                 }
-                <es-button
-                  [disabled]="
-                    loading() || !allGroupsSatisfied() || anyUploadInProgress()
-                  "
-                  (click)="submitAllKyc()"
-                >
-                  Submit KYC documents
-                </es-button>
+
+                @if (kycAlreadySubmitted() && !kycDirtySinceSubmit()) {
+                  <p class="kyc-submit__status" role="status">
+                    <span aria-hidden="true">✓</span> KYC documents submitted
+                    for review.
+                  </p>
+                } @else {
+                  <es-button
+                    [disabled]="!canSubmitKyc()"
+                    (click)="submitAllKyc()"
+                  >
+                    Submit KYC documents
+                  </es-button>
+                }
               </div>
             }
           </es-card>
@@ -726,6 +735,25 @@ type GroupSelection = Record<string, DocumentType>;
           } @else {
             <p class="preview-empty">No preview available for this file.</p>
           }
+        </div>
+      </div>
+    }
+
+    @if (kycSubmitSuccess()) {
+      <div
+        class="preview-overlay"
+        role="dialog"
+        aria-modal="true"
+        aria-label="KYC submitted for review"
+        (click)="continueAfterKycSubmit()"
+      >
+        <div class="preview-dialog success-dialog">
+          <p class="success-dialog__icon" aria-hidden="true">✓</p>
+          <h2>KYC submitted for review</h2>
+          <p>
+            We'll review your documents and notify you once they're verified.
+          </p>
+          <es-button (click)="continueAfterKycSubmit()">Continue</es-button>
         </div>
       </div>
     }
@@ -1187,6 +1215,51 @@ type GroupSelection = Record<string, DocumentType>;
         margin: 0;
       }
 
+      .kyc-submit__status {
+        align-items: center;
+        background: #def7ec;
+        border-radius: var(--es-radius-sm);
+        color: #03543f;
+        display: flex;
+        font-size: 0.875rem;
+        font-weight: 700;
+        gap: 0.5rem;
+        padding: 0.75rem 1rem;
+      }
+
+      .success-dialog {
+        cursor: default;
+        justify-items: center;
+        padding: 2rem;
+        text-align: center;
+      }
+
+      .success-dialog__icon {
+        align-items: center;
+        background: rgba(0, 168, 121, 0.12);
+        border-radius: 999px;
+        color: var(--es-color-accent-dark);
+        display: flex;
+        font-size: 1.75rem;
+        font-weight: 800;
+        height: 3.5rem;
+        justify-content: center;
+        margin: 0 0 0.5rem;
+        width: 3.5rem;
+      }
+
+      .success-dialog h2 {
+        color: var(--es-color-neutral-900);
+        font-size: 1.25rem;
+        margin: 0;
+      }
+
+      .success-dialog p {
+        color: var(--es-color-neutral-600);
+        margin: 0 0 0.5rem;
+        max-width: 24rem;
+      }
+
       /* image preview (popup) styles */
 
       .side-upload__actions {
@@ -1467,11 +1540,11 @@ export class OnboardingComponent {
   /** Which document type is selected per group code (for ONE_OF groups) */
   readonly groupSelections = signal<GroupSelection>({});
 
-  /** All uploaded files, keyed by documentType + side */
-  readonly uploadedFiles = signal<UploadedKycFile[]>([]);
+  // /** All uploaded files, keyed by documentType + side */
+  // readonly uploadedFiles = signal<UploadedKycFile[]>([]);
 
   /** File currently shown in the preview modal (null = closed) */
-  readonly previewFile = signal<UploadedKycFile | null>(null);
+  readonly previewFile = signal<KycDocumentFile | null>(null);
 
   /** Slots currently uploading, keyed by "documentType-side" */
   readonly uploadingKeys = signal<Set<string>>(new Set());
@@ -1523,14 +1596,74 @@ export class OnboardingComponent {
       this.resendSecondsRemaining() > 0,
   );
 
+  // constructor() {
+  //   this.destroyRef.onDestroy(() => {
+  //     this.stopCountdown();
+  //     this.clearAllStatusTimeouts();
+  //   });
+  // }
+
   constructor() {
+    effect(() => {
+      if (
+        this.kycAlreadySubmitted() &&
+        this.submittedFileFingerprint() === null
+      ) {
+        this.submittedFileFingerprint.set(this.currentFileFingerprint());
+      }
+    });
+
     this.destroyRef.onDestroy(() => {
       this.stopCountdown();
       this.clearAllStatusTimeouts();
+      if (this.kycSuccessTimeout !== null) {
+        clearTimeout(this.kycSuccessTimeout);
+      }
     });
   }
 
   readonly anyUploadInProgress = computed(() => this.uploadingKeys().size > 0);
+
+  /** Raw document+file records from the server — the single source of truth for KYC uploads */
+  readonly kycDocuments = computed<KycDocumentRecord[]>(
+    () => this.state()?.review?.kyc?.documents ?? [],
+  );
+
+  /** Document ids to submit — always freshly derived from server state, never stale local memory */
+  readonly documentIdsForSubmit = computed<string[]>(() => [
+    ...new Set(this.kycDocuments().map((doc) => doc.id)),
+  ]);
+
+  /** Fingerprint of every uploaded file id, used to detect changes since last submit */
+  readonly currentFileFingerprint = computed<string>(() =>
+    this.kycDocuments()
+      .flatMap((doc) => doc.files.map((file) => file.id))
+      .sort()
+      .join(','),
+  );
+
+  /** Fingerprint captured at the moment of the last successful submit; null until first submit this session */
+  readonly submittedFileFingerprint = signal<string | null>(null);
+
+  readonly kycAlreadySubmitted = computed(() => {
+    const status = this.state()?.review?.kyc?.status;
+    return !!status && status !== 'NOT_STARTED';
+  });
+
+  readonly kycDirtySinceSubmit = computed(() => {
+    const baseline = this.submittedFileFingerprint();
+    return baseline === null || this.currentFileFingerprint() !== baseline;
+  });
+
+  readonly canSubmitKyc = computed(
+    () =>
+      this.allGroupsSatisfied() &&
+      !this.anyUploadInProgress() &&
+      (!this.kycAlreadySubmitted() || this.kycDirtySinceSubmit()),
+  );
+
+  readonly kycSubmitSuccess = signal(false);
+  private kycSuccessTimeout: ReturnType<typeof setTimeout> | null = null;
 
   phone = '+251';
 
@@ -1578,25 +1711,31 @@ export class OnboardingComponent {
     return this.business.businessName.trim().length > 0;
   }
 
+  private optionFor(documentType: DocumentType): KycDocumentOption | undefined {
+    for (const group of this.kycGroups()) {
+      const option = group.options.find((o) => o.documentType === documentType);
+      if (option) {
+        return option;
+      }
+    }
+    return undefined;
+  }
   isOptionComplete(option: KycDocumentOption): boolean {
-    return option.requiredSides.every((side) =>
-      this.isSideUploaded(option.documentType, side),
-    );
+    return option.complete;
   }
 
   uploadedSidesCount(option: KycDocumentOption): number {
-    return option.requiredSides.filter((side) =>
-      this.isSideUploaded(option.documentType, side),
-    ).length;
+    return option.uploadedSides.length;
   }
 
-  uploadedFileFor(
+  private fileRecordFor(
     documentType: DocumentType,
     side: DocumentSide,
-  ): UploadedKycFile | undefined {
-    return this.uploadedFiles().find(
-      (f) => f.documentType === documentType && f.side === side,
+  ): KycDocumentFile | undefined {
+    const doc = this.kycDocuments().find(
+      (d) => d.documentType === documentType,
     );
+    return doc?.files.find((f) => f.side === side);
   }
 
   selectedOption(group: KycRequirementGroup): KycDocumentOption | undefined {
@@ -1605,13 +1744,11 @@ export class OnboardingComponent {
   }
 
   isSideUploaded(documentType: DocumentType, side: DocumentSide): boolean {
-    return this.uploadedFiles().some(
-      (f) => f.documentType === documentType && f.side === side,
-    );
+    return this.optionFor(documentType)?.uploadedSides.includes(side) ?? false;
   }
 
   openPreview(documentType: DocumentType, side: DocumentSide): void {
-    const file = this.uploadedFileFor(documentType, side);
+    const file = this.fileRecordFor(documentType, side);
     if (file) {
       this.previewFile.set(file);
     }
@@ -1894,25 +2031,10 @@ export class OnboardingComponent {
     this.api
       .uploadKycDocument(option.documentType, side, file)
       .pipe(
-        switchMap((response) => {
-          this.uploadedFiles.update((files) => [
-            ...files.filter(
-              (f) =>
-                !(f.documentType === option.documentType && f.side === side),
-            ),
-            {
-              documentId: response.documentId,
-              documentType: option.documentType,
-              side: response.side,
-              fileName: response.fileName,
-              fileUrl: response.fileUrl,
-            },
-          ]);
-          return this.refreshState();
-        }),
+        switchMap(() => this.refreshState()),
         finalize(() => {
           this.endUpload(key);
-          input.value = ''; // allow re-selecting the same file after a failure
+          input.value = '';
         }),
       )
       .subscribe({
@@ -1930,11 +2052,9 @@ export class OnboardingComponent {
   }
 
   submitAllKyc(): void {
-    const allDocumentIds = [
-      ...new Set(this.uploadedFiles().map((f) => f.documentId)),
-    ];
+    const documentIds = this.documentIdsForSubmit();
 
-    if (allDocumentIds.length === 0) {
+    if (documentIds.length === 0) {
       this.kycSubmitError.set(
         'No documents found to submit. Please upload all required documents first.',
       );
@@ -1945,20 +2065,30 @@ export class OnboardingComponent {
     this.loading.set(true);
 
     this.api
-      .submitKyc({ documentIds: allDocumentIds })
+      .submitKyc({ documentIds })
       .pipe(
         switchMap(() => this.refreshState()),
         finalize(() => this.loading.set(false)),
       )
       .subscribe({
         next: () => {
-          this.message.set('KYC submitted for review.');
-          this.step.set('settlement');
+          this.submittedFileFingerprint.set(this.currentFileFingerprint());
+          this.showKycSuccess();
         },
         error: (err: unknown) => {
           this.kycSubmitError.set(this.extractErrorMessage(err));
         },
       });
+  }
+
+  continueAfterKycSubmit(): void {
+    if (this.kycSuccessTimeout !== null) {
+      clearTimeout(this.kycSuccessTimeout);
+      this.kycSuccessTimeout = null;
+    }
+    this.kycSubmitSuccess.set(false);
+    this.message.set('KYC submitted for review.');
+    this.step.set('settlement');
   }
 
   // submitAllKyc(): void {
@@ -2325,5 +2455,12 @@ export class OnboardingComponent {
       clearInterval(this.countdownHandle);
       this.countdownHandle = null;
     }
+  }
+  private showKycSuccess(): void {
+    this.kycSubmitSuccess.set(true);
+    this.kycSuccessTimeout = setTimeout(
+      () => this.continueAfterKycSubmit(),
+      1800,
+    );
   }
 }

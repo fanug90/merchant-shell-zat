@@ -22,11 +22,14 @@ export type MerchantOnboardingStatus =
   | 'ACTIVE'
   | 'SUSPENDED';
 
-export type DocumentType = 'KEBELE_ID' | 'PASSPORT' | 'DRIVERS_LICENSE' | 'TRADE_LICENSE';
+export type DocumentType =
+  | 'KEBELE_ID'
+  | 'PASSPORT'
+  | 'DRIVERS_LICENSE'
+  | 'TRADE_LICENSE';
 export type DocumentSide = 'FRONT' | 'BACK' | 'SELFIE';
 export type BankCode = 'CBE' | 'ETT' | 'AWB' | 'DAS' | 'ABB' | 'OTHER';
 export type SideUploadStatus = { type: 'success' | 'error'; message: string };
-
 
 export interface PhoneOtpRequest {
   phone: string;
@@ -120,7 +123,13 @@ export interface KycSubmitRequest {
 export interface KycSubmissionResponse {
   id?: string;
   merchantId?: string;
-  status?: 'NOT_STARTED' | 'IN_PROGRESS' | 'SUBMITTED' | 'APPROVED' | 'REJECTED' | 'REQUIRES_RESUBMISSION';
+  status?:
+    | 'NOT_STARTED'
+    | 'IN_PROGRESS'
+    | 'SUBMITTED'
+    | 'APPROVED'
+    | 'REJECTED'
+    | 'REQUIRES_RESUBMISSION';
   documentType?: DocumentType;
   rejectionReason?: string;
   submittedAt?: string;
@@ -175,11 +184,10 @@ export interface OnboardingStateResponse {
   completedSteps?: OnboardingStep[];
   checklist?: OnboardingChecklistResponse;
   review?: OnboardingReviewResponse;
-  // Grouped KYC requirements returned with the state 
+  // Grouped KYC requirements returned with the state
   kycRequirements?: KycRequirementGroup[];
   blockers?: string[];
 }
-
 
 export interface OnboardingSubmitRequest {
   acceptTermsOfService: boolean;
@@ -239,4 +247,45 @@ export interface UploadPolicy {
   maxFileSizeBytes: number;
   maxFileSizeLabel: string;
   allowedContentTypes: string[];
+}
+
+// added types to support the new onboarding flow
+
+export interface KycDocumentFile {
+  id: string;
+  side: DocumentSide;
+  fileName: string;
+  fileUrl?: string;
+  contentType?: string;
+  createdAt?: string;
+}
+
+export interface KycDocumentRecord {
+  id: string;
+  documentType: DocumentType;
+  status?: 'PENDING' | 'VERIFIED' | 'REJECTED' | string;
+  expiryDate?: string;
+  verifiedAt?: string;
+  files: KycDocumentFile[];
+}
+
+export interface KycSubmissionResponse {
+  id?: string;
+  merchantId?: string;
+  status?:
+    | 'NOT_STARTED'
+    | 'IN_PROGRESS'
+    | 'SUBMITTED'
+    | 'APPROVED'
+    | 'REJECTED'
+    | 'REQUIRES_RESUBMISSION';
+  documentType?: DocumentType;
+  livenessScore?: number;
+  faceMatchScore?: number;
+  reviewedBy?: string;
+  reviewedAt?: string;
+  rejectionReason?: string;
+  submittedAt?: string;
+  createdAt?: string;
+  documents?: KycDocumentRecord[];
 }
