@@ -2,6 +2,7 @@ import {
   ChangeDetectionStrategy,
   Component,
   computed,
+  DestroyRef,
   inject,
   signal,
 } from '@angular/core';
@@ -102,7 +103,10 @@ type GroupSelection = Record<string, DocumentType>;
 
       @switch (step()) {
         @case ('phone') {
-          <es-card title="Phone verification">
+          <es-card
+            title="Phone verification"
+            subtitle="We'll text a one-time code to verify your number."
+          >
             <form class="grid" (ngSubmit)="requestOtp()">
               <label for="phone-input">
                 Phone number
@@ -112,36 +116,71 @@ type GroupSelection = Record<string, DocumentType>;
                   required
                   placeholder="+251912345678"
                   autocomplete="tel"
+                  [disabled]="otpRequested()"
                   [(ngModel)]="phone"
                 />
               </label>
-              <es-button type="submit" [disabled]="loading()"
-                >Send OTP</es-button
-              >
+
+              <div class="otp-actions">
+                <es-button type="submit" [disabled]="sendOtpDisabled()">
+                  {{ otpRequested() ? 'OTP sent' : 'Send OTP' }}
+                </es-button>
+
+                @if (otpRequested()) {
+                  @if (canResend()) {
+                    <es-button
+                      type="button"
+                      variant="secondary"
+                      (click)="requestOtp(true)"
+                    >
+                      Resend OTP
+                    </es-button>
+                  } @else {
+                    <span
+                      class="resend-countdown"
+                      role="status"
+                      aria-live="polite"
+                    >
+                      Resend in {{ resendCountdownLabel() }}
+                    </span>
+                  }
+                }
+              </div>
+
+              @if (otpRequested()) {
+                <button
+                  type="button"
+                  class="change-number"
+                  (click)="changePhoneNumber()"
+                >
+                  Wrong number? Change it
+                </button>
+              }
             </form>
 
-            <form class="grid verify" (ngSubmit)="verifyOtp()">
-              <label for="otp-input">
-                OTP code
-                <input
-                  id="otp-input"
-                  name="otpCode"
-                  required
-                  maxlength="6"
-                  minlength="6"
-                  inputmode="numeric"
-                  autocomplete="one-time-code"
-                  placeholder="842190"
-                  [(ngModel)]="otpCode"
-                />
-              </label>
-              <es-button
-                type="submit"
-                variant="secondary"
-                [disabled]="loading() || !otpRequested()"
-                >Verify and continue</es-button
-              >
-            </form>
+            @if (otpRequested()) {
+              <form class="grid verify" (ngSubmit)="verifyOtp()">
+                <label for="otp-input">
+                  Enter the 6-digit code
+                  <input
+                    id="otp-input"
+                    name="otpCode"
+                    required
+                    maxlength="6"
+                    minlength="6"
+                    inputmode="numeric"
+                    autocomplete="one-time-code"
+                    placeholder="842190"
+                    [ngModel]="otpCode()"
+                    (ngModelChange)="onOtpCodeChange($event)"
+                    (beforeinput)="onBeforeInput($event)"
+                  />
+                </label>
+                <es-button type="submit" [disabled]="verifyOtpDisabled()">
+                  Verify and continue
+                </es-button>
+              </form>
+            }
           </es-card>
         }
 
@@ -268,14 +307,14 @@ type GroupSelection = Record<string, DocumentType>;
                           }
                         </p>
 
-                             <!-- Upload policy hint -->
-              @if (uploadPolicy(); as policy) {
-                <p class="upload-hint" aria-live="polite">
-                  Accepted formats: {{ allowedFormatsLabel(policy) }} · Max
-                  size: {{ policy.maxFileSizeLabel }}
-                </p>
-              }
-
+                        <!-- Upload policy hint -->
+                        @if (uploadPolicy(); as policy) {
+                          <p class="upload-hint" aria-live="polite">
+                            Accepted formats:
+                            {{ allowedFormatsLabel(policy) }} · Max size:
+                            {{ policy.maxFileSizeLabel }}
+                          </p>
+                        }
                       </div>
                       @if (group.satisfied) {
                         <es-status-badge label="Complete" tone="success" />
@@ -294,6 +333,7 @@ type GroupSelection = Record<string, DocumentType>;
                         <select
                           [id]="'select-' + group.code"
                           [name]="'doc-type-' + group.code"
+                          [disabled]="isGroupLocked(group)"
                           [attr.aria-label]="
                             'Choose document type for ' + group.displayName
                           "
@@ -324,6 +364,13 @@ type GroupSelection = Record<string, DocumentType>;
                         </select>
                       </label>
 
+                      <!-- @if (isGroupLocked(group)) {
+                        <p class="group-locked-hint">
+                          <span aria-hidden="true">🔒</span>
+                          Verified. To use a different document, update it from
+                          your profile after onboarding.
+                        </p>
+                      } -->
                       <!-- Upload area for the selected option -->
                       @if (selectedOption(group); as option) {
                         <div class="upload-area">
@@ -404,11 +451,15 @@ type GroupSelection = Record<string, DocumentType>;
 
               <!-- Submit all KYC -->
               <div class="kyc-submit">
-                 @if (kycSubmitError()) {
-    <p class="kyc-submit__error" role="alert">{{ kycSubmitError() }}</p>
-  }
+                @if (kycSubmitError()) {
+                  <p class="kyc-submit__error" role="alert">
+                    {{ kycSubmitError() }}
+                  </p>
+                }
                 <es-button
-                  [disabled]="loading() || !allGroupsSatisfied() || anyUploadInProgress()"
+                  [disabled]="
+                    loading() || !allGroupsSatisfied() || anyUploadInProgress()
+                  "
                   (click)="submitAllKyc()"
                 >
                   Submit KYC documents
@@ -870,6 +921,49 @@ type GroupSelection = Record<string, DocumentType>;
         max-width: 72rem;
       }
 
+      /* phone verification step style*/
+
+      .otp-actions {
+        align-items: center;
+        display: flex;
+        gap: 0.75rem;
+      }
+
+      .resend-countdown {
+        color: var(--es-color-neutral-600);
+        font-size: 0.8125rem;
+        font-weight: 650;
+      }
+
+      .change-number {
+        background: none;
+        border: 0;
+        color: var(--es-color-accent-dark);
+        cursor: pointer;
+        font-size: 0.8125rem;
+        font-weight: 700;
+        justify-self: start;
+        padding: 0;
+        text-decoration: underline;
+      }
+
+      .change-number:hover {
+        color: var(--es-color-primary-hover);
+      }
+
+      #phone-input:disabled {
+        background: var(--es-color-neutral-100);
+        color: var(--es-color-neutral-700);
+        cursor: not-allowed;
+      }
+
+      #otp-input {
+        font-size: 1.25rem;
+        font-weight: 700;
+        letter-spacing: 0.5em;
+        text-align: center;
+      }
+
       /* ── KYC groups ───────────────────────────────── */
 
       .kyc-groups {
@@ -936,6 +1030,22 @@ type GroupSelection = Record<string, DocumentType>;
         opacity: 0.8;
       }
 
+      .group-locked-hint {
+        align-items: center;
+        color: var(--es-color-accent-dark);
+        display: flex;
+        font-size: 0.8125rem;
+        font-weight: 650;
+        gap: 0.375rem;
+        margin: -0.5rem 0 1rem;
+      }
+
+      .doc-select-label select:disabled {
+        background: var(--es-color-neutral-100);
+        color: var(--es-color-neutral-700);
+        cursor: not-allowed;
+        opacity: 0.85;
+      }
       /* ── Upload area ─────────────────────────────── */
 
       .upload-area {
@@ -1063,13 +1173,13 @@ type GroupSelection = Record<string, DocumentType>;
       }
 
       .kyc-submit__error {
-  background: #fde8e8;
-  border-radius: var(--es-radius-sm);
-  color: #9b1c1c;
-  font-size: 0.8125rem;
-  margin: 0 0 0.75rem;
-  padding: 0.625rem 0.875rem;
-}
+        background: #fde8e8;
+        border-radius: var(--es-radius-sm);
+        color: #9b1c1c;
+        font-size: 0.8125rem;
+        margin: 0 0 0.75rem;
+        padding: 0.625rem 0.875rem;
+      }
 
       .file-error {
         color: #9b1c1c;
@@ -1201,6 +1311,29 @@ type GroupSelection = Record<string, DocumentType>;
         }
       }
 
+      @keyframes side-upload-toast {
+        0% {
+          opacity: 0;
+          transform: translateY(-4px);
+        }
+        8% {
+          opacity: 1;
+          transform: translateY(0);
+        }
+        82% {
+          opacity: 1;
+          transform: translateY(0);
+        }
+        100% {
+          opacity: 0;
+          transform: translateY(-4px);
+        }
+      }
+
+      .side-upload__status--success {
+        animation: side-upload-toast 2600ms ease forwards;
+      }
+
       /* ── Settlement ───────────────────────────────── */
 
       .accounts {
@@ -1293,6 +1426,11 @@ type GroupSelection = Record<string, DocumentType>;
 export class OnboardingComponent {
   private readonly api = inject(OnboardingApiService);
   private readonly session = inject(OnboardingSessionService);
+  private readonly destroyRef = inject(DestroyRef);
+  private readonly statusTimeouts = new Map<
+    string,
+    ReturnType<typeof setTimeout>
+  >();
 
   readonly steps: { key: UiStep; label: string }[] = [
     { key: 'phone', label: 'Phone' },
@@ -1311,6 +1449,7 @@ export class OnboardingComponent {
     'OTHER',
   ];
 
+  readonly otpCode = signal('');
   readonly step = signal<UiStep>('phone');
   readonly loading = signal(false);
   readonly otpRequested = signal(false);
@@ -1343,10 +1482,57 @@ export class OnboardingComponent {
   /** Last success/error message per slot, keyed by "documentType-side" */
   readonly sideStatus = signal<Record<string, SideUploadStatus>>({});
 
+  /** True while the user is re-entering their number but still under the previous cooldown */
+  readonly editingPhoneCooldownActive = computed(
+    () => !this.otpRequested() && this.resendSecondsRemaining() > 0,
+  );
+
+  readonly otpCodeValid = computed(() => /^\d{6}$/.test(this.otpCode()));
+
+  readonly verifyOtpDisabled = computed(
+    () => this.loading() || !this.otpRequested() || !this.otpCodeValid(),
+  );
+  /** Epoch ms when resend becomes available, null when no OTP is in flight */
+  readonly resendAvailableAt = signal<number | null>(null);
+  private readonly nowTick = signal(Date.now());
+  private countdownHandle: ReturnType<typeof setInterval> | null = null;
+
+  readonly resendSecondsRemaining = computed(() => {
+    const availableAt = this.resendAvailableAt();
+    if (availableAt === null) {
+      return 0;
+    }
+    return Math.max(0, Math.ceil((availableAt - this.nowTick()) / 1000));
+  });
+
+  readonly resendCountdownLabel = computed(() => {
+    const seconds = this.resendSecondsRemaining();
+    const minutes = Math.floor(seconds / 60);
+    const remainder = seconds % 60;
+    return `${minutes}:${remainder.toString().padStart(2, '0')}`;
+  });
+
+  readonly canResend = computed(
+    () => this.otpRequested() && this.resendSecondsRemaining() === 0,
+  );
+
+  readonly sendOtpDisabled = computed(
+    () =>
+      this.loading() ||
+      this.otpRequested() ||
+      this.resendSecondsRemaining() > 0,
+  );
+
+  constructor() {
+    this.destroyRef.onDestroy(() => {
+      this.stopCountdown();
+      this.clearAllStatusTimeouts();
+    });
+  }
+
   readonly anyUploadInProgress = computed(() => this.uploadingKeys().size > 0);
 
   phone = '+251';
-  otpCode = '';
 
   business = {
     businessName: '',
@@ -1435,6 +1621,21 @@ export class OnboardingComponent {
     this.previewFile.set(null);
   }
 
+  isGroupLocked(group: KycRequirementGroup): boolean {
+    if (group.selectionMode !== 'ONE_OF') {
+      return false;
+    }
+    const selected = this.selectedOption(group);
+    return !!selected && this.isOptionComplete(selected);
+  }
+
+  isOneOfGroupLocked(
+    group: KycRequirementGroup,
+    option: KycDocumentOption,
+  ): boolean {
+    return group.selectionMode === 'ONE_OF' && this.isOptionComplete(option);
+  }
+
   //helper methods for display images in their line rather than intop which is not convenent to see for user
 
   private keyFor(documentType: DocumentType, side: DocumentSide): string {
@@ -1469,18 +1670,43 @@ export class OnboardingComponent {
     type: SideUploadStatus['type'],
     message: string,
   ): void {
+    this.clearStatusTimeout(key);
     this.sideStatus.update((statuses) => ({
       ...statuses,
       [key]: { type, message },
     }));
+
+    if (type === 'success') {
+      const handle = setTimeout(() => {
+        this.sideStatus.update((statuses) => {
+          // Don't clobber a newer status that may have replaced this one
+          if (statuses[key]?.message !== message) {
+            return statuses;
+          }
+          const next = { ...statuses };
+          delete next[key];
+          return next;
+        });
+        this.statusTimeouts.delete(key);
+      }, 2600);
+      this.statusTimeouts.set(key, handle);
+    }
   }
 
   private clearSideStatus(key: string): void {
+    this.clearStatusTimeout(key);
     this.sideStatus.update((statuses) => {
       const next = { ...statuses };
       delete next[key];
       return next;
     });
+  }
+
+  private clearAllStatusTimeouts(): void {
+    for (const handle of this.statusTimeouts.values()) {
+      clearTimeout(handle);
+    }
+    this.statusTimeouts.clear();
   }
 
   private extractErrorMessage(error: unknown): string {
@@ -1629,90 +1855,111 @@ export class OnboardingComponent {
   //   // );
   // }
 
- onFileChange(option: KycDocumentOption, side: DocumentSide, event: Event): void {
-  const input = event.target as HTMLInputElement;
-  const file = input.files?.[0];
-  if (!file) return;
+  onFileChange(
+    option: KycDocumentOption,
+    side: DocumentSide,
+    event: Event,
+  ): void {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
 
-  const key = this.keyFor(option.documentType, side);
-  const policy = this.uploadPolicy();
+    const key = this.keyFor(option.documentType, side);
+    const policy = this.uploadPolicy();
 
-  if (policy) {
-    if (file.size > policy.maxFileSizeBytes) {
-      this.setSideStatus(key, 'error', `File exceeds the ${policy.maxFileSizeLabel} size limit.`);
-      input.value = '';
-      return;
+    if (policy) {
+      if (file.size > policy.maxFileSizeBytes) {
+        this.setSideStatus(
+          key,
+          'error',
+          `File exceeds the ${policy.maxFileSizeLabel} size limit.`,
+        );
+        input.value = '';
+        return;
+      }
+      if (!policy.allowedContentTypes.includes(file.type)) {
+        this.setSideStatus(
+          key,
+          'error',
+          `Only ${this.allowedFormatsLabel(policy)} files are accepted.`,
+        );
+        input.value = '';
+        return;
+      }
     }
-    if (!policy.allowedContentTypes.includes(file.type)) {
-      this.setSideStatus(key, 'error', `Only ${this.allowedFormatsLabel(policy)} files are accepted.`);
-      input.value = '';
-      return;
-    }
+
+    this.clearSideStatus(key);
+    this.beginUpload(key);
+
+    this.api
+      .uploadKycDocument(option.documentType, side, file)
+      .pipe(
+        switchMap((response) => {
+          this.uploadedFiles.update((files) => [
+            ...files.filter(
+              (f) =>
+                !(f.documentType === option.documentType && f.side === side),
+            ),
+            {
+              documentId: response.documentId,
+              documentType: option.documentType,
+              side: response.side,
+              fileName: response.fileName,
+              fileUrl: response.fileUrl,
+            },
+          ]);
+          return this.refreshState();
+        }),
+        finalize(() => {
+          this.endUpload(key);
+          input.value = ''; // allow re-selecting the same file after a failure
+        }),
+      )
+      .subscribe({
+        next: () => {
+          this.setSideStatus(
+            key,
+            'success',
+            `${option.displayName} ${side} uploaded successfully.`,
+          );
+        },
+        error: (err: unknown) => {
+          this.setSideStatus(key, 'error', this.extractErrorMessage(err));
+        },
+      });
   }
-
-  this.clearSideStatus(key);
-  this.beginUpload(key);
-
-  this.api
-    .uploadKycDocument(option.documentType, side, file)
-    .pipe(
-      switchMap((response) => {
-        this.uploadedFiles.update((files) => [
-          ...files.filter((f) => !(f.documentType === option.documentType && f.side === side)),
-          {
-            documentId: response.documentId,
-            documentType: option.documentType,
-            side: response.side,
-            fileName: response.fileName,
-            fileUrl: response.fileUrl,
-          },
-        ]);
-        return this.refreshState();
-      }),
-      finalize(() => {
-        this.endUpload(key);
-        input.value = ''; // allow re-selecting the same file after a failure
-      }),
-    )
-    .subscribe({
-      next: () => {
-        this.setSideStatus(key, 'success', `${option.displayName} ${side} uploaded successfully.`);
-      },
-      error: (err: unknown) => {
-        this.setSideStatus(key, 'error', this.extractErrorMessage(err));
-      },
-    });
-}
 
   submitAllKyc(): void {
-  const allDocumentIds = [...new Set(this.uploadedFiles().map((f) => f.documentId))];
+    const allDocumentIds = [
+      ...new Set(this.uploadedFiles().map((f) => f.documentId)),
+    ];
 
-  if (allDocumentIds.length === 0) {
-    this.kycSubmitError.set(
-      'No documents found to submit. Please upload all required documents first.',
-    );
-    return;
+    if (allDocumentIds.length === 0) {
+      this.kycSubmitError.set(
+        'No documents found to submit. Please upload all required documents first.',
+      );
+      return;
+    }
+
+    this.kycSubmitError.set('');
+    this.loading.set(true);
+
+    this.api
+      .submitKyc({ documentIds: allDocumentIds })
+      .pipe(
+        switchMap(() => this.refreshState()),
+        finalize(() => this.loading.set(false)),
+      )
+      .subscribe({
+        next: () => {
+          this.message.set('KYC submitted for review.');
+          this.step.set('settlement');
+        },
+        error: (err: unknown) => {
+          this.kycSubmitError.set(this.extractErrorMessage(err));
+        },
+      });
   }
-
-  this.kycSubmitError.set('');
-  this.loading.set(true);
-
-  this.api
-    .submitKyc({ documentIds: allDocumentIds })
-    .pipe(
-      switchMap(() => this.refreshState()),
-      finalize(() => this.loading.set(false)),
-    )
-    .subscribe({
-      next: () => {
-        this.message.set('KYC submitted for review.');
-        this.step.set('settlement');
-      },
-      error: (err: unknown) => {
-        this.kycSubmitError.set(this.extractErrorMessage(err));
-      },
-    });
-}
 
   // submitAllKyc(): void {
   //   // Build one submit request per distinct documentType that has uploads
@@ -1743,13 +1990,16 @@ export class OnboardingComponent {
   //   );
   // }
 
-  requestOtp(): void {
+  requestOtp(isResend = false): void {
     this.run(() =>
       this.api.requestPhoneOtp({ phone: this.phone }).subscribe({
         next: (response) => {
           this.otpRequested.set(true);
+          this.startCountdown(response.resendAfterSeconds);
           this.message.set(
-            `OTP sent to ${response.phone}. Resend available after ${response.resendAfterSeconds}s.`,
+            isResend
+              ? `A new code was sent to ${response.phone}.`
+              : `OTP sent to ${response.phone}.`,
           );
         },
         error: (err: unknown) => this.showError(err),
@@ -1758,10 +2008,19 @@ export class OnboardingComponent {
     );
   }
 
+  changePhoneNumber(): void {
+    this.otpRequested.set(false);
+    this.otpCode.set('');
+    this.stopCountdown();
+    this.resendAvailableAt.set(null);
+    this.message.set('');
+    this.error.set('');
+  }
+
   verifyOtp(): void {
     this.run(() =>
       this.api
-        .verifyPhoneOtp({ phone: this.phone, otpCode: this.otpCode })
+        .verifyPhoneOtp({ phone: this.phone, otpCode: this.otpCode() })
         .pipe(
           switchMap((response) => {
             this.session.setVerification(this.phone, response);
@@ -1946,6 +2205,17 @@ export class OnboardingComponent {
     window.location.assign('/login');
   }
 
+  onOtpCodeChange(value: string): void {
+    this.otpCode.set(value.replace(/\D/g, '').slice(0, 6));
+  }
+  onBeforeInput(event: InputEvent): void {
+    // 1. Only intercept if actual text/data is being inserted
+    // 2. If it's not a digit (0-9), block it
+    if (event.data && !/^[0-9]+$/.test(event.data)) {
+      event.preventDefault();
+    }
+  }
+
   // ── Private helpers ───────────────────────────────────────────────────────
 
   private hydrateBusiness(state: OnboardingStateResponse): void {
@@ -2023,10 +2293,37 @@ export class OnboardingComponent {
     this.loading.set(false);
   }
 
+  private clearStatusTimeout(key: string): void {
+    const handle = this.statusTimeouts.get(key);
+    if (handle !== undefined) {
+      clearTimeout(handle);
+      this.statusTimeouts.delete(key);
+    }
+  }
+
   private setDefaultSettlementOption(
     options: SettlementOptionResponse[],
   ): void {
     const first = options[0];
     if (first) this.settlement.bankCode = first.code;
+  }
+
+  private startCountdown(resendAfterSeconds: number): void {
+    this.stopCountdown();
+    this.resendAvailableAt.set(Date.now() + resendAfterSeconds * 1000);
+    this.nowTick.set(Date.now());
+    this.countdownHandle = setInterval(() => {
+      this.nowTick.set(Date.now());
+      if (this.resendSecondsRemaining() === 0) {
+        this.stopCountdown();
+      }
+    }, 1000);
+  }
+
+  private stopCountdown(): void {
+    if (this.countdownHandle !== null) {
+      clearInterval(this.countdownHandle);
+      this.countdownHandle = null;
+    }
   }
 }
