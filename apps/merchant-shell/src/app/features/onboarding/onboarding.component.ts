@@ -4,8 +4,10 @@ import {
   computed,
   DestroyRef,
   effect,
+  ElementRef,
   inject,
   signal,
+  viewChildren,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { NgTemplateOutlet } from '@angular/common';
@@ -37,14 +39,6 @@ import {
 import { finalize, forkJoin, map, of, switchMap } from 'rxjs';
 
 type UiStep = 'phone' | 'business' | 'kyc' | 'settlement' | 'review' | 'done';
-
-interface UploadedKycFile {
-  documentId: string;
-  documentType: DocumentType;
-  side: DocumentSide;
-  fileUrl?: string;
-  fileName: string;
-}
 
 /** Track which document type the user has selected per group code */
 type GroupSelection = Record<string, DocumentType>;
@@ -106,82 +100,104 @@ type GroupSelection = Record<string, DocumentType>;
 
       @switch (step()) {
         @case ('phone') {
-          <es-card
-            title="Phone verification"
-            subtitle="We'll text a one-time code to verify your number."
-          >
-            <form class="grid" (ngSubmit)="requestOtp()">
-              <label for="phone-input">
-                Phone number
-                <input
-                  id="phone-input"
-                  name="phone"
-                  required
-                  placeholder="+251912345678"
-                  autocomplete="tel"
-                  [disabled]="otpRequested()"
-                  [(ngModel)]="phone"
-                />
-              </label>
-
-              <div class="otp-actions">
+          <es-card title="Phone verification" [subtitle]="phoneCardSubtitle()">
+            @if (!otpRequested()) {
+              <form class="grid" (ngSubmit)="requestOtp()">
+                <div class="phone-field">
+                  <span class="phone-field__label" id="phone-label"
+                    >Phone number</span
+                  >
+                  <div
+                    class="phone-input"
+                    role="group"
+                    aria-labelledby="phone-label"
+                  >
+                    <span class="phone-input__prefix" aria-hidden="true">
+                      <span class="phone-input__flag">🇪🇹</span> +251
+                    </span>
+                    <input
+                      id="phone-input"
+                      type="text"
+                      inputmode="numeric"
+                      maxlength="9"
+                      placeholder="912345678"
+                      autocomplete="tel-national"
+                      aria-label="9-digit phone number, without the country code"
+                      [value]="phoneNationalNumber()"
+                      (input)="onPhoneNumberInput($event)"
+                    />
+                  </div>
+                </div>
                 <es-button type="submit" [disabled]="sendOtpDisabled()">
-                  {{ otpRequested() ? 'OTP sent' : 'Send OTP' }}
+                  @if (editingPhoneCooldownActive()) {
+                    Please wait
+                  } @else {
+                    Send OTP
+                  }
                 </es-button>
-
-                @if (otpRequested()) {
+              </form>
+            } @else {
+              <div class="phone-confirmed" role="status" aria-live="polite">
+                <p>
+                  <span class="phone-confirmed__label">Code sent to</span>
+                  <strong class="phone-confirmed__number">{{
+                    maskedPhone()
+                  }}</strong>
+                </p>
+                <div class="phone-confirmed__actions">
                   @if (canResend()) {
-                    <es-button
+                    <button
                       type="button"
-                      variant="secondary"
+                      class="change-number"
                       (click)="requestOtp(true)"
                     >
-                      Resend OTP
-                    </es-button>
+                      Resend code
+                    </button>
                   } @else {
-                    <span
-                      class="resend-countdown"
-                      role="status"
-                      aria-live="polite"
+                    <span class="resend-countdown"
+                      >Resend in {{ resendCountdownLabel() }}</span
                     >
-                      Resend in {{ resendCountdownLabel() }}
-                    </span>
                   }
-                }
+                  <button
+                    type="button"
+                    class="change-number"
+                    (click)="changePhoneNumber()"
+                  >
+                    Change number
+                  </button>
+                </div>
               </div>
 
-              @if (otpRequested()) {
-                <button
-                  type="button"
-                  class="change-number"
-                  (click)="changePhoneNumber()"
-                >
-                  Wrong number? Change it
-                </button>
-              }
-            </form>
-
-            @if (otpRequested()) {
               <form class="grid verify" (ngSubmit)="verifyOtp()">
-                <label for="otp-input">
-                  Enter the 6-digit code
-                  <input
-                    id="otp-input"
-                    name="otpCode"
-                    required
-                    maxlength="6"
-                    minlength="6"
-                    inputmode="numeric"
-                    autocomplete="one-time-code"
-                    placeholder="842190"
-                    [ngModel]="otpCode()"
-                    (ngModelChange)="onOtpCodeChange($event)"
-                    (beforeinput)="onBeforeInput($event)"
-                  />
-                </label>
-                <es-button type="submit" [disabled]="verifyOtpDisabled()">
-                  Verify and continue
-                </es-button>
+                <div class="otp-field">
+                  <span class="otp-field__label" id="otp-label"
+                    >Enter the 6-digit code</span
+                  >
+                  <div
+                    class="otp-boxes"
+                    role="group"
+                    aria-labelledby="otp-label"
+                  >
+                    @for (digit of otpDigits(); track $index) {
+                      <input
+                        #otpBox
+                        type="text"
+                        inputmode="numeric"
+                        maxlength="1"
+                        autocomplete="one-time-code"
+                        class="otp-box"
+                        [attr.aria-label]="'Digit ' + ($index + 1) + ' of 6'"
+                        [value]="digit"
+                        (input)="onOtpDigitInput($index, $event)"
+                        (keydown)="onOtpKeydown($index, $event)"
+                        (paste)="onOtpPaste($event)"
+                      />
+                    }
+                  </div>
+                </div>
+                <es-button type="submit" [disabled]="verifyOtpDisabled()"
+                  >Verify and continue</es-button
+                >
               </form>
             }
           </es-card>
@@ -262,13 +278,25 @@ type GroupSelection = Record<string, DocumentType>;
                 </label>
                 <label for="revenue">
                   Estimated monthly revenue
-                  <input
-                    id="revenue"
-                    name="estimatedMonthlyRevenue"
-                    type="number"
-                    min="0"
-                    [(ngModel)]="business.estimatedMonthlyRevenue"
-                  />
+                  <span class="currency-input">
+                    <span class="currency-input__prefix" aria-hidden="true"
+                      >ETB</span
+                    >
+                    <input
+                      id="revenue"
+                      name="estimatedMonthlyRevenue"
+                      type="text"
+                      inputmode="numeric"
+                      autocomplete="off"
+                      placeholder="0"
+                      aria-describedby="revenue-hint"
+                      [value]="estimatedMonthlyRevenueDisplay()"
+                      (input)="onRevenueInput($event)"
+                    />
+                  </span>
+                  <span id="revenue-hint" class="field-hint"
+                    >Enter the amount in Ethiopian Birr</span
+                  >
                 </label>
               </div>
               <es-button type="submit" [disabled]="loading()"
@@ -290,6 +318,12 @@ type GroupSelection = Record<string, DocumentType>;
                 description="Verify your phone first, then this screen will load document requirements."
               />
             } @else {
+              @if (uploadPolicy(); as policy) {
+                <p class="upload-hint upload-hint--top" aria-live="polite">
+                  Accepted formats: {{ allowedFormatsLabel(policy) }} · Max
+                  size: {{ policy.maxFileSizeLabel }}
+                </p>
+              }
               <div class="kyc-groups">
                 @for (group of kycGroups(); track group.code) {
                   <section
@@ -309,15 +343,6 @@ type GroupSelection = Record<string, DocumentType>;
                             All of the following documents are required
                           }
                         </p>
-
-                        <!-- Upload policy hint -->
-                        @if (uploadPolicy(); as policy) {
-                          <p class="upload-hint" aria-live="polite">
-                            Accepted formats:
-                            {{ allowedFormatsLabel(policy) }} · Max size:
-                            {{ policy.maxFileSizeLabel }}
-                          </p>
-                        }
                       </div>
                       @if (group.satisfied) {
                         <es-status-badge label="Complete" tone="success" />
@@ -443,14 +468,6 @@ type GroupSelection = Record<string, DocumentType>;
                   </section>
                 }
               </div>
-
-              <!-- Upload policy hint
-              @if (uploadPolicy(); as policy) {
-                <p class="upload-hint" aria-live="polite">
-                  Accepted formats: {{ allowedFormatsLabel(policy) }} · Max
-                  size: {{ policy.maxFileSizeLabel }}
-                </p>
-              } -->
 
               <!-- Submit all KYC -->
               <div class="kyc-submit">
@@ -951,6 +968,38 @@ type GroupSelection = Record<string, DocumentType>;
 
       /* phone verification step style*/
 
+      .phone-confirmed {
+        align-items: center;
+        border-bottom: 1px solid var(--es-color-border);
+        display: flex;
+        gap: 1rem;
+        justify-content: space-between;
+        margin: 0 0 1.25rem;
+        padding-bottom: 1.25rem;
+      }
+
+      .phone-confirmed p {
+        margin: 0;
+      }
+
+      .phone-confirmed__label {
+        color: var(--es-color-neutral-600);
+        display: block;
+        font-size: 0.8125rem;
+      }
+
+      .phone-confirmed__number {
+        color: var(--es-color-neutral-900);
+        font-size: 1.0625rem;
+      }
+
+      .phone-confirmed__actions {
+        align-items: center;
+        display: flex;
+        gap: 1rem;
+        white-space: nowrap;
+      }
+
       .otp-actions {
         align-items: center;
         display: flex;
@@ -979,17 +1028,104 @@ type GroupSelection = Record<string, DocumentType>;
         color: var(--es-color-primary-hover);
       }
 
-      #phone-input:disabled {
-        background: var(--es-color-neutral-100);
-        color: var(--es-color-neutral-700);
-        cursor: not-allowed;
+      .phone-field,
+      .otp-field {
+        display: grid;
+        gap: 0.375rem;
       }
 
-      #otp-input {
-        font-size: 1.25rem;
+      .phone-field__label,
+      .otp-field__label {
+        color: var(--es-color-neutral-700);
+        font-weight: 650;
+      }
+
+      .phone-input {
+        align-items: stretch;
+        display: flex;
+      }
+
+      .phone-input__prefix {
+        align-items: center;
+        background: var(--es-color-neutral-100);
+        border: 1px solid #cbd8e7;
+        border-radius: var(--es-radius-sm) 0 0 var(--es-radius-sm);
+        border-right: 0;
+        color: var(--es-color-neutral-700);
+        display: flex;
         font-weight: 700;
-        letter-spacing: 0.5em;
+        gap: 0.375rem;
+        padding: 0 0.75rem;
+        white-space: nowrap;
+      }
+
+      .phone-input__flag {
+        font-size: 1rem;
+      }
+
+      .phone-input input {
+        border-radius: 0 var(--es-radius-sm) var(--es-radius-sm) 0;
+        flex: 1;
+        min-width: 0;
+      }
+
+      .otp-boxes {
+        display: flex;
+        gap: 0.625rem;
+      }
+
+      .otp-box {
+        border: 1px solid #cbd8e7;
+        border-radius: var(--es-radius-sm);
+        font-size: 1.5rem;
+        font-weight: 700;
+        height: 3.25rem;
         text-align: center;
+        width: 3rem;
+      }
+
+      .otp-box:focus {
+        border-color: var(--es-color-accent);
+        box-shadow: 0 0 0 3px rgba(0, 168, 121, 0.14);
+        outline: 0;
+      }
+
+      @media (max-width: 420px) {
+        .otp-box {
+          height: 2.75rem;
+          width: 2.5rem;
+        }
+      }
+      /* ── currency style ───────────────────────────────── */
+
+      .currency-input {
+        align-items: center;
+        display: flex;
+      }
+
+      .currency-input__prefix {
+        background: var(--es-color-neutral-100);
+        border: 1px solid #cbd8e7;
+        border-radius: var(--es-radius-sm) 0 0 var(--es-radius-sm);
+        border-right: 0;
+        color: var(--es-color-neutral-600);
+        font-size: 0.8125rem;
+        font-weight: 700;
+        height: 2.75rem;
+        align-items: center;
+        display: flex;
+        padding: 0 0.625rem;
+      }
+
+      .currency-input input {
+        border-radius: 0 var(--es-radius-sm) var(--es-radius-sm) 0;
+        flex: 1;
+      }
+
+      .field-hint {
+        color: var(--es-color-neutral-600);
+        font-size: 0.75rem;
+        font-weight: 400;
       }
 
       /* ── KYC groups ───────────────────────────────── */
@@ -1188,10 +1324,13 @@ type GroupSelection = Record<string, DocumentType>;
 
       /* ── Upload hint & submit ─────────────────────── */
 
-      .upload-hint {
+      .upload-hint--top {
+        background: var(--es-color-neutral-100);
+        border-radius: var(--es-radius-sm);
         color: var(--es-color-neutral-600);
         font-size: 0.8125rem;
-        margin: 1rem 0 0;
+        margin: 0 0 1.25rem;
+        padding: 0.625rem 0.875rem;
       }
 
       .kyc-submit {
@@ -1522,7 +1661,6 @@ export class OnboardingComponent {
     'OTHER',
   ];
 
-  readonly otpCode = signal('');
   readonly step = signal<UiStep>('phone');
   readonly loading = signal(false);
   readonly otpRequested = signal(false);
@@ -1535,13 +1673,14 @@ export class OnboardingComponent {
   readonly approvalMessage = signal(
     'Your merchant onboarding request has been submitted.',
   );
+
+  /** What the user sees in the input, e.g. "1,300,000" */
+  readonly estimatedMonthlyRevenueDisplay = signal('');
+
   readonly uploadPolicy = signal<UploadPolicy | null>(null);
 
   /** Which document type is selected per group code (for ONE_OF groups) */
   readonly groupSelections = signal<GroupSelection>({});
-
-  // /** All uploaded files, keyed by documentType + side */
-  // readonly uploadedFiles = signal<UploadedKycFile[]>([]);
 
   /** File currently shown in the preview modal (null = closed) */
   readonly previewFile = signal<KycDocumentFile | null>(null);
@@ -1559,8 +1698,6 @@ export class OnboardingComponent {
   readonly editingPhoneCooldownActive = computed(
     () => !this.otpRequested() && this.resendSecondsRemaining() > 0,
   );
-
-  readonly otpCodeValid = computed(() => /^\d{6}$/.test(this.otpCode()));
 
   readonly verifyOtpDisabled = computed(
     () => this.loading() || !this.otpRequested() || !this.otpCodeValid(),
@@ -1588,20 +1725,6 @@ export class OnboardingComponent {
   readonly canResend = computed(
     () => this.otpRequested() && this.resendSecondsRemaining() === 0,
   );
-
-  readonly sendOtpDisabled = computed(
-    () =>
-      this.loading() ||
-      this.otpRequested() ||
-      this.resendSecondsRemaining() > 0,
-  );
-
-  // constructor() {
-  //   this.destroyRef.onDestroy(() => {
-  //     this.stopCountdown();
-  //     this.clearAllStatusTimeouts();
-  //   });
-  // }
 
   constructor() {
     effect(() => {
@@ -1665,7 +1788,46 @@ export class OnboardingComponent {
   readonly kycSubmitSuccess = signal(false);
   private kycSuccessTimeout: ReturnType<typeof setTimeout> | null = null;
 
-  phone = '+251';
+  /** National number only — the 9 digits after +251, entered by the user */
+  readonly phoneNationalNumber = signal('');
+
+  readonly phoneNumberValid = computed(() =>
+    /^\d{9}$/.test(this.phoneNationalNumber()),
+  );
+
+  /** Full E.164 phone number sent to the backend */
+  readonly fullPhone = computed(() => `+251${this.phoneNationalNumber()}`);
+
+  /** One entry per OTP box */
+  readonly otpDigits = signal<string[]>(['', '', '', '', '', '']);
+
+  readonly otpCode = computed(() => this.otpDigits().join(''));
+  readonly otpCodeValid = computed(() => /^\d{6}$/.test(this.otpCode()));
+
+  private readonly otpBoxRefs =
+    viewChildren<ElementRef<HTMLInputElement>>('otpBox');
+
+  readonly sendOtpDisabled = computed(
+    () =>
+      this.loading() ||
+      this.otpRequested() ||
+      this.resendSecondsRemaining() > 0 ||
+      !this.phoneNumberValid(),
+  );
+
+  readonly phoneCardSubtitle = computed(() =>
+    this.otpRequested()
+      ? 'Enter the code below to finish verifying your number.'
+      : "We'll text a one-time code to verify your number.",
+  );
+
+  readonly maskedPhone = computed(() => {
+    const digits = this.phoneNationalNumber();
+    if (digits.length !== 9) {
+      return this.fullPhone();
+    }
+    return `+251 ${digits.slice(0, 2)}•• •••${digits.slice(-2)}`;
+  });
 
   business = {
     businessName: '',
@@ -1773,6 +1935,26 @@ export class OnboardingComponent {
     return group.selectionMode === 'ONE_OF' && this.isOptionComplete(option);
   }
 
+  onRevenueInput(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const digitsOnly = input.value.replace(/\D/g, '');
+
+    if (!digitsOnly) {
+      this.business.estimatedMonthlyRevenue = null;
+      this.estimatedMonthlyRevenueDisplay.set('');
+      return;
+    }
+
+    const numericValue = Number(digitsOnly);
+    this.business.estimatedMonthlyRevenue = numericValue;
+    this.estimatedMonthlyRevenueDisplay.set(formatThousands(numericValue));
+
+    queueMicrotask(() => {
+      const end = input.value.length;
+      input.setSelectionRange(end, end);
+    });
+  }
+
   //helper methods for display images in their line rather than intop which is not convenent to see for user
 
   private keyFor(documentType: DocumentType, side: DocumentSide): string {
@@ -1858,22 +2040,6 @@ export class OnboardingComponent {
     );
   }
 
-  // allGroupsHaveUploads(): boolean {
-  //   return this.kycGroups().every((group) => {
-  //     if (group.selectionMode === 'ONE_OF') {
-  //       const selected = this.groupSelections()[group.code];
-  //       if (!selected) return false;
-  //       const option = group.options.find((o) => o.documentType === selected);
-  //       if (!option) return false;
-  //       return option.requiredSides.every((side) => this.isSideUploaded(selected, side));
-  //     }
-  //     // ALL_OF
-  //     return group.options.every((option) =>
-  //       option.requiredSides.every((side) => this.isSideUploaded(option.documentType, side))
-  //     );
-  //   });
-  // }
-
   allGroupsSatisfied(): boolean {
     const groups = this.kycGroups();
     return groups.length > 0 && groups.every((g) => g.satisfied);
@@ -1885,6 +2051,71 @@ export class OnboardingComponent {
       .join(', ');
   }
 
+  onOtpDigitInput(index: number, event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const rawValue = input.value.replace(/\D/g, '');
+
+    if (rawValue.length > 1) {
+      // Handles mobile/browser autofill dropping the full code into one box
+      this.distributeOtpDigits(rawValue, index);
+      return;
+    }
+
+    this.otpDigits.update((digits) => {
+      const next = [...digits];
+      next[index] = rawValue;
+      return next;
+    });
+    input.value = rawValue;
+
+    if (rawValue && index < this.otpDigits().length - 1) {
+      this.focusOtpBox(index + 1);
+    }
+  }
+
+  onOtpKeydown(index: number, event: KeyboardEvent): void {
+    const input = event.target as HTMLInputElement;
+
+    if (event.key === 'Backspace' && !input.value && index > 0) {
+      event.preventDefault();
+      this.otpDigits.update((digits) => {
+        const next = [...digits];
+        next[index - 1] = '';
+        return next;
+      });
+      this.focusOtpBox(index - 1);
+    }
+
+    if (event.key === 'ArrowLeft' && index > 0) {
+      event.preventDefault();
+      this.focusOtpBox(index - 1);
+    }
+
+    if (event.key === 'ArrowRight' && index < this.otpDigits().length - 1) {
+      event.preventDefault();
+      this.focusOtpBox(index + 1);
+    }
+  }
+
+  onOtpPaste(event: ClipboardEvent): void {
+    event.preventDefault();
+    const digits = (event.clipboardData?.getData('text') ?? '').replace(
+      /\D/g,
+      '',
+    );
+
+    if (digits) {
+      this.distributeOtpDigits(digits, 0);
+    }
+  }
+
+  onPhoneNumberInput(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const digits = input.value.replace(/\D/g, '').slice(0, 9);
+    this.phoneNationalNumber.set(digits);
+    input.value = digits;
+  }
+
   // ── Actions ──────────────────────────────────────────────────────────────
 
   selectDocumentType(groupCode: string, documentType: DocumentType): void {
@@ -1893,104 +2124,6 @@ export class OnboardingComponent {
       [groupCode]: documentType,
     }));
   }
-
-  // onFileChange(
-  //   option: KycDocumentOption,
-  //   side: DocumentSide,
-  //   event: Event,
-  // ): void {
-  //   const input = event.target as HTMLInputElement;
-  //   const file = input.files?.[0];
-  //   if (!file) return;
-
-  //   const key = `${option.documentType}-${side}`;
-
-  //   // Client-side validation against upload policy
-  //   const policy = this.uploadPolicy();
-  //   if (policy) {
-  //     if (file.size > policy.maxFileSizeBytes) {
-  //       this.fileErrors.update((e) => ({
-  //         ...e,
-  //         [key]: `File exceeds the ${policy.maxFileSizeLabel} size limit.`,
-  //       }));
-  //       input.value = '';
-  //       return;
-  //     }
-  //     if (!policy.allowedContentTypes.includes(file.type)) {
-  //       this.fileErrors.update((e) => ({
-  //         ...e,
-  //         [key]: `Only ${this.allowedFormatsLabel(policy)} files are accepted.`,
-  //       }));
-  //       input.value = '';
-  //       return;
-  //     }
-  //   }
-
-  //   // Clear any prior error for this field
-  //   this.fileErrors.update((e) => {
-  //     const next = { ...e };
-  //     delete next[key];
-  //     return next;
-  //   });
-
-  //   this.run(() =>
-  //     this.api
-  //       .uploadKycDocument(option.documentType, side, file)
-  //       .pipe(
-  //         switchMap((response) => {
-  //           // Record the upload locally first so the file name/id is available
-  //           this.uploadedFiles.update((files) => [
-  //             ...files.filter(
-  //               (f) =>
-  //                 !(f.documentType === option.documentType && f.side === side),
-  //             ),
-  //             {
-  //               documentId: response.documentId,
-  //               documentType: option.documentType,
-  //               side: response.side,
-  //               fileName: response.fileName,
-  //               fileUrl: response.fileUrl,
-  //             },
-  //           ]);
-  //           // Then refresh state so the server's uploadedSides/complete/satisfied
-  //           return this.refreshState();
-  //         }),
-  //       )
-  //       .subscribe({
-  //         next: () => {
-  //           this.message.set(`${option.displayName} ${side} uploaded.`);
-  //         },
-  //         error: (err: unknown) => this.showError(err),
-  //         complete: () => this.loading.set(false),
-  //       }),
-  //   );
-
-  //   // this.run(() =>
-  //   //   this.api.uploadKycDocument(option.documentType, side, file)
-  //   // // .pipe(
-  //   // //     switchMap((response) => this.refreshState().pipe(map(() => response)))
-  //   // //   )
-  //   //   .subscribe({
-  //   //     next: (response) => {
-  //   //       this.uploadedFiles.update((files) => [
-  //   //         ...files.filter(
-  //   //           (f) => !(f.documentType === option.documentType && f.side === side)
-  //   //         ),
-  //   //         {
-  //   //           documentId: response.documentId,
-  //   //           documentType: option.documentType,
-  //   //           side: response.side,
-  //   //           fileName: response.fileName,
-  //   //           fileUrl: response.fileUrl,
-  //   //         },
-  //   //       ]);
-  //   //       this.message.set(`${option.displayName} ${side} uploaded.`);
-  //   //     },
-  //   //     error: (err: unknown) => this.showError(err),
-  //   //     complete: () => this.loading.set(false),
-  //   //   })
-  //   // );
-  // }
 
   onFileChange(
     option: KycDocumentOption,
@@ -2091,46 +2224,19 @@ export class OnboardingComponent {
     this.step.set('settlement');
   }
 
-  // submitAllKyc(): void {
-  //   // Build one submit request per distinct documentType that has uploads
-  //   const uploadsByType = new Map<DocumentType, string[]>();
-  //   for (const file of this.uploadedFiles()) {
-  //     const existing = uploadsByType.get(file.documentType) ?? [];
-  //     uploadsByType.set(file.documentType, [...existing, file.documentId]);
-  //   }
-
-  //   if (uploadsByType.size === 0) return;
-
-  //   // Submit sequentially using the first documentType for now;
-  //   // extend to parallel forkJoin if the API supports multiple submissions.
-  //   const [firstType, firstIds] = [...uploadsByType.entries()][0]!;
-
-  //   this.run(() =>
-  //     this.api
-  //       .submitKyc({ documentType: firstType, documentIds: firstIds })
-  //       .pipe(switchMap(() => this.refreshState()))
-  //       .subscribe({
-  //         next: () => {
-  //           this.message.set('KYC submitted for review.');
-  //           this.step.set('settlement');
-  //         },
-  //         error: (err: unknown) => this.showError(err),
-  //         complete: () => this.loading.set(false),
-  //       })
-  //   );
-  // }
-
   requestOtp(isResend = false): void {
     this.run(() =>
-      this.api.requestPhoneOtp({ phone: this.phone }).subscribe({
+      this.api.requestPhoneOtp({ phone: this.fullPhone() }).subscribe({
         next: (response) => {
           this.otpRequested.set(true);
+          this.resetOtpDigits();
           this.startCountdown(response.resendAfterSeconds);
           this.message.set(
             isResend
               ? `A new code was sent to ${response.phone}.`
-              : `OTP sent to ${response.phone}.`,
+              : `Enter the OTP we sent to ${response.phone}.`,
           );
+          this.focusOtpBox(0);
         },
         error: (err: unknown) => this.showError(err),
         complete: () => this.loading.set(false),
@@ -2140,7 +2246,7 @@ export class OnboardingComponent {
 
   changePhoneNumber(): void {
     this.otpRequested.set(false);
-    this.otpCode.set('');
+    this.resetOtpDigits();
     this.stopCountdown();
     this.resendAvailableAt.set(null);
     this.message.set('');
@@ -2150,15 +2256,14 @@ export class OnboardingComponent {
   verifyOtp(): void {
     this.run(() =>
       this.api
-        .verifyPhoneOtp({ phone: this.phone, otpCode: this.otpCode() })
+        .verifyPhoneOtp({ phone: this.fullPhone(), otpCode: this.otpCode() })
         .pipe(
           switchMap((response) => {
-            this.session.setVerification(this.phone, response);
+            this.session.setVerification(this.fullPhone(), response);
             return forkJoin({
               state: this.api.getOnboardingState(),
               uploadPolicy: this.api.getUploadPolicy(),
               settlementOptions: this.api.listSettlementOptions(),
-              // bankAccounts: this.api.listBankAccounts(),
             });
           }),
         )
@@ -2169,7 +2274,6 @@ export class OnboardingComponent {
             this.initGroupSelections(state.kycRequirements ?? []);
             this.settlementOptions.set(settlementOptions);
             this.setDefaultSettlementOption(settlementOptions);
-            // this.bankAccounts.set(bankAccounts);
 
             // Populate  the business form if the DB already has data
             this.hydrateBusiness(state);
@@ -2190,9 +2294,6 @@ export class OnboardingComponent {
             }
 
             this.step.set(uiStep);
-
-            // this.message.set('Phone verified. Continue with business details.');
-            // this.step.set('business');
           },
           error: (err: unknown) => this.showError(err),
           complete: () => this.loading.set(false),
@@ -2335,16 +2436,13 @@ export class OnboardingComponent {
     window.location.assign('/login');
   }
 
-  onOtpCodeChange(value: string): void {
-    this.otpCode.set(value.replace(/\D/g, '').slice(0, 6));
-  }
-  onBeforeInput(event: InputEvent): void {
-    // 1. Only intercept if actual text/data is being inserted
-    // 2. If it's not a digit (0-9), block it
-    if (event.data && !/^[0-9]+$/.test(event.data)) {
-      event.preventDefault();
-    }
-  }
+  // onBeforeInput(event: InputEvent): void {
+  //   // 1. Only intercept if actual text/data is being inserted
+  //   // 2. If it's not a digit (0-9), block it
+  //   if (event.data && !/^[0-9]+$/.test(event.data)) {
+  //     event.preventDefault();
+  //   }
+  // }
 
   // ── Private helpers ───────────────────────────────────────────────────────
 
@@ -2363,6 +2461,14 @@ export class OnboardingComponent {
 
     const money = merchant.estimatedMonthlyRevenue;
     this.business.estimatedMonthlyRevenue = money?.amount ?? null;
+
+    this.estimatedMonthlyRevenueDisplay.set(
+      money?.display
+        ? stripCurrencyLabel(money.display)
+        : money?.amount != null
+          ? formatThousands(money.amount)
+          : '',
+    );
   }
 
   private initGroupSelections(groups: KycRequirementGroup[]): void {
@@ -2463,4 +2569,70 @@ export class OnboardingComponent {
       1800,
     );
   }
+
+  private distributeOtpDigits(rawValue: string, startIndex: number): void {
+    const digits = rawValue.slice(0, 6 - startIndex).split('');
+
+    this.otpDigits.update((current) => {
+      const next = [...current];
+      digits.forEach((digit, offset) => {
+        next[startIndex + offset] = digit;
+      });
+      return next;
+    });
+
+    this.focusOtpBox(Math.min(startIndex + digits.length, 6) - 1);
+  }
+
+  private focusOtpBox(index: number): void {
+    queueMicrotask(() => this.otpBoxRefs()[index]?.nativeElement.focus());
+  }
+
+  private resetOtpDigits(): void {
+    this.otpDigits.set(['', '', '', '', '', '']);
+  }
+}
+
+function formatThousands(value: number): string {
+  return value.toLocaleString('en-US');
+}
+
+/** Finds where the cursor should land after formatting, based on how many
+ *  digits preceded it before the reformat (so typing mid-number doesn't jump). */
+function cursorPositionForDigitCount(
+  formatted: string,
+  digitCount: number,
+): number {
+  if (digitCount <= 0) {
+    return 0;
+  }
+
+  let seen = 0;
+  for (let index = 0; index < formatted.length; index++) {
+    if (/\d/.test(formatted[index])) {
+      seen++;
+      if (seen === digitCount) {
+        return index + 1;
+      }
+    }
+  }
+
+  return formatted.length;
+}
+function parseAmountFromDisplay(display: string | undefined): number | null {
+  if (!display) {
+    return null;
+  }
+
+  const numericPortion = display.replace(/[^\d.]/g, '');
+  if (!numericPortion) {
+    return null;
+  }
+
+  const parsed = Number(numericPortion);
+  return Number.isFinite(parsed) ? Math.round(parsed) : null;
+}
+
+function stripCurrencyLabel(display: string): string {
+  return display.replace(/[A-Za-z]+\s*/g, '').trim();
 }
