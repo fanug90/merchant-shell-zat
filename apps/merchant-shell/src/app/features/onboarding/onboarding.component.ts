@@ -100,18 +100,21 @@ type GroupSelection = Record<string, DocumentType>;
 
       @switch (step()) {
         @case ('phone') {
-          <es-card title="Phone verification" [subtitle]="phoneCardSubtitle()">
-            @if (!otpRequested()) {
-              <form class="grid" (ngSubmit)="requestOtp()">
-                <div class="phone-field">
-                  <span class="phone-field__label" id="phone-label"
-                    >Phone number</span
-                  >
+          <es-card class="phone-card">
+            <div class="phone-step">
+              @if (!otpRequested()) {
+                <h2 class="phone-step__title">Verify your phone</h2>
+                <p class="phone-step__subtitle">
+                  We'll text a 6-digit code to confirm it's you.
+                </p>
+
+                <form class="phone-step__form" (ngSubmit)="requestOtp()">
                   <div
                     class="phone-input"
                     role="group"
                     aria-labelledby="phone-label"
                   >
+                    <span class="sr-only" id="phone-label">Phone number</span>
                     <span class="phone-input__prefix" aria-hidden="true">
                       <span class="phone-input__flag">🇪🇹</span> +251
                     </span>
@@ -127,57 +130,33 @@ type GroupSelection = Record<string, DocumentType>;
                       (input)="onPhoneNumberInput($event)"
                     />
                   </div>
-                </div>
-                <es-button type="submit" [disabled]="sendOtpDisabled()">
-                  @if (editingPhoneCooldownActive()) {
-                    Please wait
-                  } @else {
-                    Send OTP
-                  }
-                </es-button>
-              </form>
-            } @else {
-              <div class="phone-confirmed" role="status" aria-live="polite">
-                <p>
-                  <span class="phone-confirmed__label">Code sent to</span>
-                  <strong class="phone-confirmed__number">{{
+
+                  <es-button type="submit" [disabled]="sendOtpDisabled()">
+                    @if (editingPhoneCooldownActive()) {
+                      Please wait
+                    } @else {
+                      Send OTP
+                    }
+                  </es-button>
+                </form>
+              } @else {
+                <h2 class="phone-step__title">Phone Verification</h2>
+                <p class="phone-step__subtitle">
+                  Enter the 6-digit code sent to
+                  <strong class="phone-step__number">{{
                     maskedPhone()
                   }}</strong>
                 </p>
-                <div class="phone-confirmed__actions">
-                  @if (canResend()) {
-                    <button
-                      type="button"
-                      class="change-number"
-                      (click)="requestOtp(true)"
-                    >
-                      Resend code
-                    </button>
-                  } @else {
-                    <span class="resend-countdown"
-                      >Resend in {{ resendCountdownLabel() }}</span
-                    >
-                  }
-                  <button
-                    type="button"
-                    class="change-number"
-                    (click)="changePhoneNumber()"
-                  >
-                    Change number
-                  </button>
-                </div>
-              </div>
 
-              <form class="grid verify" (ngSubmit)="verifyOtp()">
-                <div class="otp-field">
-                  <span class="otp-field__label" id="otp-label"
-                    >Enter the 6-digit code</span
-                  >
+                <form class="phone-step__form" (ngSubmit)="verifyOtp()">
                   <div
                     class="otp-boxes"
                     role="group"
                     aria-labelledby="otp-label"
                   >
+                    <span class="sr-only" id="otp-label"
+                      >Enter the 6-digit code</span
+                    >
                     @for (digit of otpDigits(); track $index) {
                       <input
                         #otpBox
@@ -194,12 +173,36 @@ type GroupSelection = Record<string, DocumentType>;
                       />
                     }
                   </div>
-                </div>
-                <es-button type="submit" [disabled]="verifyOtpDisabled()"
-                  >Verify and continue</es-button
-                >
-              </form>
-            }
+
+                  <div class="phone-step__meta">
+                    @if (canResend()) {
+                      <button
+                        type="button"
+                        class="change-number"
+                        (click)="requestOtp()"
+                      >
+                        Resend code
+                      </button>
+                    } @else {
+                      <span class="resend-countdown"
+                        >Resend code in {{ resendCountdownLabel() }}</span
+                      >
+                    }
+                    <button
+                      type="button"
+                      class="change-number"
+                      (click)="changePhoneNumber()"
+                    >
+                      Change number
+                    </button>
+                  </div>
+
+                  <es-button type="submit" [disabled]="verifyOtpDisabled()">
+                    Verify and Continue
+                  </es-button>
+                </form>
+              }
+            </div>
           </es-card>
         }
 
@@ -968,42 +971,102 @@ type GroupSelection = Record<string, DocumentType>;
 
       /* phone verification step style*/
 
-      .phone-confirmed {
-        align-items: center;
-        border-bottom: 1px solid var(--es-color-border);
-        display: flex;
-        gap: 1rem;
-        justify-content: space-between;
-        margin: 0 0 1.25rem;
-        padding-bottom: 1.25rem;
+      .phone-step {
+        display: grid;
+        gap: 0.375rem;
+        justify-items: center;
+        padding: 1.5rem 1rem 1rem;
+        text-align: center;
       }
 
-      .phone-confirmed p {
+      .phone-step__title {
+        color: var(--es-color-neutral-900);
+        font-size: 1.75rem;
+        font-weight: 800;
         margin: 0;
       }
 
-      .phone-confirmed__label {
+      .phone-step__subtitle {
         color: var(--es-color-neutral-600);
-        display: block;
-        font-size: 0.8125rem;
+        margin: 0 0 1.5rem;
+        max-width: 24rem;
       }
 
-      .phone-confirmed__number {
+      .phone-step__number {
         color: var(--es-color-neutral-900);
+        display: block;
         font-size: 1.0625rem;
+        font-weight: 800;
+        letter-spacing: 0.02em;
+        margin-top: 0.375rem;
       }
 
-      .phone-confirmed__actions {
+      .phone-step__form {
+        display: grid;
+        gap: 1.5rem;
+        width: 100%;
+        max-width: 22rem;
+      }
+
+      .phone-step__meta {
         align-items: center;
         display: flex;
-        gap: 1rem;
+        justify-content: space-between;
+      }
+
+      .phone-input {
+        display: flex;
+      }
+
+      .phone-input__prefix {
+        align-items: center;
+        background: var(--es-color-neutral-100);
+        border: 1px solid #cbd8e7;
+        border-radius: var(--es-radius-lg) 0 0 var(--es-radius-lg);
+        border-right: 0;
+        color: var(--es-color-neutral-700);
+        display: flex;
+        font-weight: 700;
+        gap: 0.375rem;
+        padding: 0 0.875rem;
         white-space: nowrap;
       }
 
-      .otp-actions {
-        align-items: center;
+      .phone-input__flag {
+        font-size: 1rem;
+      }
+
+      .phone-input input {
+        border: 1px solid #cbd8e7;
+        border-radius: 0 var(--es-radius-lg) var(--es-radius-lg) 0;
+        flex: 1;
+        min-height: 2.75rem;
+        min-width: 0;
+        padding: 0 0.75rem;
+      }
+
+      .otp-boxes {
         display: flex;
-        gap: 0.75rem;
+        gap: 0.625rem;
+        justify-content: center;
+      }
+
+      .otp-box {
+        background: var(--es-color-neutral-100);
+        border: 1px solid var(--es-color-border);
+        border-radius: var(--es-radius-lg);
+        color: var(--es-color-neutral-900);
+        font-size: 1.5rem;
+        font-weight: 800;
+        height: 3.5rem;
+        text-align: center;
+        width: 3.25rem;
+      }
+
+      .otp-box:focus {
+        border-color: var(--es-color-accent);
+        box-shadow: 0 0 0 3px rgba(0, 168, 121, 0.14);
+        outline: 0;
       }
 
       .resend-countdown {
@@ -1019,7 +1082,6 @@ type GroupSelection = Record<string, DocumentType>;
         cursor: pointer;
         font-size: 0.8125rem;
         font-weight: 700;
-        justify-self: start;
         padding: 0;
         text-decoration: underline;
       }
@@ -1028,74 +1090,141 @@ type GroupSelection = Record<string, DocumentType>;
         color: var(--es-color-primary-hover);
       }
 
-      .phone-field,
-      .otp-field {
-        display: grid;
-        gap: 0.375rem;
-      }
-
-      .phone-field__label,
-      .otp-field__label {
-        color: var(--es-color-neutral-700);
-        font-weight: 650;
-      }
-
-      .phone-input {
-        align-items: stretch;
-        display: flex;
-      }
-
-      .phone-input__prefix {
-        align-items: center;
-        background: var(--es-color-neutral-100);
-        border: 1px solid #cbd8e7;
-        border-radius: var(--es-radius-sm) 0 0 var(--es-radius-sm);
-        border-right: 0;
-        color: var(--es-color-neutral-700);
-        display: flex;
-        font-weight: 700;
-        gap: 0.375rem;
-        padding: 0 0.75rem;
-        white-space: nowrap;
-      }
-
-      .phone-input__flag {
-        font-size: 1rem;
-      }
-
-      .phone-input input {
-        border-radius: 0 var(--es-radius-sm) var(--es-radius-sm) 0;
-        flex: 1;
-        min-width: 0;
-      }
-
-      .otp-boxes {
-        display: flex;
-        gap: 0.625rem;
-      }
-
-      .otp-box {
-        border: 1px solid #cbd8e7;
-        border-radius: var(--es-radius-sm);
-        font-size: 1.5rem;
-        font-weight: 700;
-        height: 3.25rem;
-        text-align: center;
-        width: 3rem;
-      }
-
-      .otp-box:focus {
-        border-color: var(--es-color-accent);
-        box-shadow: 0 0 0 3px rgba(0, 168, 121, 0.14);
-        outline: 0;
-      }
-
-      @media (max-width: 420px) {
+      @media (max-width: 480px) {
         .otp-box {
           height: 2.75rem;
           width: 2.5rem;
         }
       }
+
+      // .phone-confirmed {
+      //   align-items: center;
+      //   border-bottom: 1px solid var(--es-color-border);
+      //   display: flex;
+      //   gap: 1rem;
+      //   justify-content: space-between;
+      //   margin: 0 0 1.25rem;
+      //   padding-bottom: 1.25rem;
+      // }
+
+      // .phone-confirmed p {
+      //   margin: 0;
+      // }
+
+      // .phone-confirmed__label {
+      //   color: var(--es-color-neutral-600);
+      //   display: block;
+      //   font-size: 0.8125rem;
+      // }
+
+      // .phone-confirmed__number {
+      //   color: var(--es-color-neutral-900);
+      //   font-size: 1.0625rem;
+      // }
+
+      // .phone-confirmed__actions {
+      //   align-items: center;
+      //   display: flex;
+      //   gap: 1rem;
+      //   white-space: nowrap;
+      // }
+
+      // .otp-actions {
+      //   align-items: center;
+      //   display: flex;
+      //   gap: 0.75rem;
+      // }
+
+      // .resend-countdown {
+      //   color: var(--es-color-neutral-600);
+      //   font-size: 0.8125rem;
+      //   font-weight: 650;
+      // }
+
+      // .change-number {
+      //   background: none;
+      //   border: 0;
+      //   color: var(--es-color-accent-dark);
+      //   cursor: pointer;
+      //   font-size: 0.8125rem;
+      //   font-weight: 700;
+      //   justify-self: start;
+      //   padding: 0;
+      //   text-decoration: underline;
+      // }
+
+      // .change-number:hover {
+      //   color: var(--es-color-primary-hover);
+      // }
+
+      // .phone-field,
+      // .otp-field {
+      //   display: grid;
+      //   gap: 0.375rem;
+      // }
+
+      // .phone-field__label,
+      // .otp-field__label {
+      //   color: var(--es-color-neutral-700);
+      //   font-weight: 650;
+      // }
+
+      // .phone-input {
+      //   align-items: stretch;
+      //   display: flex;
+      // }
+
+      // .phone-input__prefix {
+      //   align-items: center;
+      //   background: var(--es-color-neutral-100);
+      //   border: 1px solid #cbd8e7;
+      //   border-radius: var(--es-radius-sm) 0 0 var(--es-radius-sm);
+      //   border-right: 0;
+      //   color: var(--es-color-neutral-700);
+      //   display: flex;
+      //   font-weight: 700;
+      //   gap: 0.375rem;
+      //   padding: 0 0.75rem;
+      //   white-space: nowrap;
+      // }
+
+      // .phone-input__flag {
+      //   font-size: 1rem;
+      // }
+
+      // .phone-input input {
+      //   border-radius: 0 var(--es-radius-sm) var(--es-radius-sm) 0;
+      //   flex: 1;
+      //   min-width: 0;
+      // }
+
+      // .otp-boxes {
+      //   display: flex;
+      //   gap: 0.625rem;
+      // }
+
+      // .otp-box {
+      //   border: 1px solid #cbd8e7;
+      //   border-radius: var(--es-radius-sm);
+      //   font-size: 1.5rem;
+      //   font-weight: 700;
+      //   height: 3.25rem;
+      //   text-align: center;
+      //   width: 3rem;
+      // }
+
+      // .otp-box:focus {
+      //   border-color: var(--es-color-accent);
+      //   box-shadow: 0 0 0 3px rgba(0, 168, 121, 0.14);
+      //   outline: 0;
+      // }
+
+      // @media (max-width: 420px) {
+      //   .otp-box {
+      //     height: 2.75rem;
+      //     width: 2.5rem;
+      //   }
+      // }
       /* ── currency style ───────────────────────────────── */
 
       .currency-input {
@@ -2231,11 +2360,11 @@ export class OnboardingComponent {
           this.otpRequested.set(true);
           this.resetOtpDigits();
           this.startCountdown(response.resendAfterSeconds);
-          this.message.set(
-            isResend
-              ? `A new code was sent to ${response.phone}.`
-              : `Enter the OTP we sent to ${response.phone}.`,
-          );
+          // this.message.set(
+          //   isResend
+          //     ? `A new code was sent to ${response.phone}.`
+          //     : `Enter the OTP we sent to ${response.phone}.`,
+          // );
           this.focusOtpBox(0);
         },
         error: (err: unknown) => this.showError(err),
