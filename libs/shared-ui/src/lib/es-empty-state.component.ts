@@ -30,8 +30,8 @@ import { ChangeDetectionStrategy, Component, input, output } from '@angular/core
       }
 
      .es-empty__icon {
-     align-items: center
-     background: var(--es-gradient-brand); /* same gradient*/
+     align-items: center;
+     background: var(--es-gradient-brand); /* same gradient */
      border-radius: 999px;
      color: white; /* ✅ ensures icon stands out */
      display: inline-flex;
