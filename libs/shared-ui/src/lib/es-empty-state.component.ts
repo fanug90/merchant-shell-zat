@@ -5,7 +5,9 @@ import { ChangeDetectionStrategy, Component, input, output } from '@angular/core
   standalone: true,
   template: `
     <section class="es-empty" role="status" aria-live="polite">
-      <div class="es-empty__icon" aria-hidden="true">{{ icon() }}</div>
+      <div class="es-empty__icon" aria-hidden="true">
+        <span class="material-symbols-outlined">{{ icon() }}</span>
+      </div>
       <h2>{{ title() }}</h2>
       @if (description()) {
         <p>{{ description() }}</p>
@@ -17,6 +19,8 @@ import { ChangeDetectionStrategy, Component, input, output } from '@angular/core
   `,
   styles: [
     `
+      @import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0');
+
       .es-empty {
         display: grid;
         gap: 0.75rem;
@@ -25,15 +29,25 @@ import { ChangeDetectionStrategy, Component, input, output } from '@angular/core
         text-align: center;
       }
 
-      .es-empty__icon {
-        align-items: center;
-        background: var(--es-color-neutral-100);
-        border-radius: 999px;
-        color: var(--es-color-neutral-600);
-        display: inline-flex;
-        height: 3rem;
-        justify-content: center;
-        width: 3rem;
+     .es-empty__icon {
+     align-items: center
+     background: var(--es-gradient-brand); /* same gradient*/
+     border-radius: 999px;
+     color: white; /* ✅ ensures icon stands out */
+     display: inline-flex;
+     height: 3rem;
+     justify-content: center;
+     width: 3rem;    }
+
+      .material-symbols-outlined {
+        font-family: 'Material Symbols Outlined';
+        font-size: 1.75rem;
+        font-variation-settings:
+          'FILL' 0,
+          'wght' 400,
+          'GRAD' 0,
+          'opsz' 24;
+        line-height: 1;
       }
 
       h2 {
@@ -50,7 +64,7 @@ import { ChangeDetectionStrategy, Component, input, output } from '@angular/core
       button {
         border: 0;
         border-radius: var(--es-radius-sm);
-        background: var(--es-color-primary);
+        background:var(--es-gradient-brand); /* same gradient*/
         color: white;
         cursor: pointer;
         font: inherit;
