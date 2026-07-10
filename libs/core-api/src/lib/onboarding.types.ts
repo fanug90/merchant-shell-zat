@@ -228,6 +228,9 @@ export interface KycDocumentOption {
   uploadedSides: DocumentSide[];
   missingSides: DocumentSide[];
   expiryDateRequired: boolean;
+  expiryDate?: string;
+  valid?: boolean;
+  invalidReason?: string;
   uploaded: boolean;
   complete: boolean;
 }

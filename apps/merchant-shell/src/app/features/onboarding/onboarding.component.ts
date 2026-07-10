@@ -3,7 +3,6 @@ import {
   Component,
   computed,
   DestroyRef,
-  effect,
   ElementRef,
   inject,
   signal,
@@ -20,7 +19,6 @@ import {
   KycDocumentOption,
   KycDocumentRecord,
   KycRequirementGroup,
-  MerchantResponse,
   OnboardingApiService,
   OnboardingSessionService,
   OnboardingStateResponse,
@@ -211,6 +209,14 @@ type GroupSelection = Record<string, DocumentType>;
             title="Business details"
             subtitle="Provide your business information to create your merchant account."
           >
+            @if (businessDetailsLocked()) {
+              <p class="business-locked__hint">
+                <span aria-hidden="true">🔒</span>
+                Business details submitted. To make changes, update them from
+                your profile after onboarding.
+              </p>
+            }
+
             <form class="form" (ngSubmit)="submitBusinessDetails()">
               <div class="two">
                 <label for="businessName">
@@ -219,7 +225,9 @@ type GroupSelection = Record<string, DocumentType>;
                     id="businessName"
                     name="businessName"
                     required
+                    [disabled]="businessDetailsLocked()"
                     [(ngModel)]="business.businessName"
+                    (ngModelChange)="onBusinessFieldChange()"
                   />
                 </label>
                 <label for="businessNameAm">
@@ -227,7 +235,10 @@ type GroupSelection = Record<string, DocumentType>;
                   <input
                     id="businessNameAm"
                     name="businessNameAm"
+                    required
+                    [disabled]="businessDetailsLocked()"
                     [(ngModel)]="business.businessNameAm"
+                    (ngModelChange)="onBusinessFieldChange()"
                   />
                 </label>
               </div>
@@ -238,7 +249,9 @@ type GroupSelection = Record<string, DocumentType>;
                     id="businessType"
                     name="businessType"
                     required
+                    [disabled]="businessDetailsLocked()"
                     [(ngModel)]="business.businessType"
+                    (ngModelChange)="onBusinessFieldChange()"
                   >
                     @for (type of businessTypes; track type) {
                       <option [value]="type">{{ label(type) }}</option>
@@ -251,21 +264,32 @@ type GroupSelection = Record<string, DocumentType>;
                     id="email"
                     name="email"
                     type="email"
+                    required
                     autocomplete="email"
+                    [disabled]="businessDetailsLocked()"
                     [(ngModel)]="business.email"
+                    (ngModelChange)="onBusinessFieldChange()"
                   />
                 </label>
               </div>
               <div class="two">
                 <label for="city">
                   City
-                  <input id="city" name="city" [(ngModel)]="business.city" />
+                  <input
+                    id="city"
+                    name="city"
+                    placeholder="optional"
+                    [disabled]="businessDetailsLocked()"
+                    [(ngModel)]="business.city"
+                  />
                 </label>
                 <label for="subcity">
                   Subcity
                   <input
                     id="subcity"
                     name="subcity"
+                    placeholder="optional"
+                    [disabled]="businessDetailsLocked()"
                     [(ngModel)]="business.subcity"
                   />
                 </label>
@@ -276,6 +300,8 @@ type GroupSelection = Record<string, DocumentType>;
                   <input
                     id="woreda"
                     name="woreda"
+                    placeholder="optional"
+                    [disabled]="businessDetailsLocked()"
                     [(ngModel)]="business.woreda"
                   />
                 </label>
@@ -292,7 +318,9 @@ type GroupSelection = Record<string, DocumentType>;
                       inputmode="numeric"
                       autocomplete="off"
                       placeholder="0"
+                      required
                       aria-describedby="revenue-hint"
+                      [disabled]="businessDetailsLocked()"
                       [value]="estimatedMonthlyRevenueDisplay()"
                       (input)="onRevenueInput($event)"
                     />
@@ -302,13 +330,18 @@ type GroupSelection = Record<string, DocumentType>;
                   >
                 </label>
               </div>
-              <es-button type="submit" [disabled]="loading()"
-                >Save business details</es-button
-              >
+
+              @if (!businessDetailsLocked()) {
+                <es-button
+                  type="submit"
+                  [disabled]="loading() || !businessDetailsValid()"
+                >
+                  Save business details
+                </es-button>
+              }
             </form>
           </es-card>
         }
-
         @case ('kyc') {
           <es-card
             title="KYC documents"
@@ -395,13 +428,6 @@ type GroupSelection = Record<string, DocumentType>;
                         </select>
                       </label>
 
-                      <!-- @if (isGroupLocked(group)) {
-                        <p class="group-locked-hint">
-                          <span aria-hidden="true">🔒</span>
-                          Verified. To use a different document, update it from
-                          your profile after onboarding.
-                        </p>
-                      } -->
                       <!-- Upload area for the selected option -->
                       @if (selectedOption(group); as option) {
                         <div class="upload-area">
@@ -410,6 +436,9 @@ type GroupSelection = Record<string, DocumentType>;
                               sideUploads;
                               context: { option, group }
                             "
+                          />
+                          <ng-container
+                            *ngTemplateOutlet="expiryInfo; context: { option }"
                           />
                         </div>
                       }
@@ -439,14 +468,11 @@ type GroupSelection = Record<string, DocumentType>;
                               </option>
                             </select>
                           </label>
-                          @if (isOptionComplete(option)) {
-                            <div class="upload-area__status">
-                              <es-status-badge
-                                label="Complete"
-                                tone="success"
-                              />
-                            </div>
-                          } @else if (uploadedSidesCount(option) > 0) {
+
+                          @if (
+                            !isOptionComplete(option) &&
+                            uploadedSidesCount(option) > 0
+                          ) {
                             <div class="upload-area__status">
                               <es-status-badge
                                 [label]="
@@ -459,11 +485,15 @@ type GroupSelection = Record<string, DocumentType>;
                               />
                             </div>
                           }
+
                           <ng-container
                             *ngTemplateOutlet="
                               sideUploads;
                               context: { option, group }
                             "
+                          />
+                          <ng-container
+                            *ngTemplateOutlet="expiryInfo; context: { option }"
                           />
                         </div>
                       }
@@ -480,19 +510,12 @@ type GroupSelection = Record<string, DocumentType>;
                   </p>
                 }
 
-                @if (kycAlreadySubmitted() && !kycDirtySinceSubmit()) {
-                  <p class="kyc-submit__status" role="status">
-                    <span aria-hidden="true">✓</span> KYC documents submitted
-                    for review.
-                  </p>
-                } @else {
-                  <es-button
-                    [disabled]="!canSubmitKyc()"
-                    (click)="submitAllKyc()"
-                  >
-                    Submit KYC documents
-                  </es-button>
-                }
+                <es-button
+                  [disabled]="loading() || !canSubmitKyc()"
+                  (click)="submitAllKyc()"
+                >
+                  Submit KYC documents
+                </es-button>
               </div>
             }
           </es-card>
@@ -581,6 +604,32 @@ type GroupSelection = Record<string, DocumentType>;
                 </div>
               }
             </div>
+          </ng-template>
+          <ng-template #expiryInfo let-option="option">
+            @if (requiresExpiryDate(option)) {
+              <div class="expiry-info">
+                @if (option.expiryDate) {
+                  <span class="expiry-info__label"
+                    >Expiry date of the {{ option.displayName }}</span
+                  >
+                  <strong class="expiry-info__value">{{
+                    formatExpiryDate(option.expiryDate)
+                  }}</strong>
+                  @if (option.complete && option.valid === false) {
+                    <span class="expiry-info__warning" role="alert">
+                      {{
+                        option.invalidReason ||
+                          'This document could not be validated.'
+                      }}
+                    </span>
+                  }
+                } @else if (option.uploaded) {
+                  <span class="expiry-info__pending"
+                    >Extracting expiry date…</span
+                  >
+                }
+              </div>
+            }
           </ng-template>
         }
 
@@ -1097,134 +1146,6 @@ type GroupSelection = Record<string, DocumentType>;
         }
       }
 
-      // .phone-confirmed {
-      //   align-items: center;
-      //   border-bottom: 1px solid var(--es-color-border);
-      //   display: flex;
-      //   gap: 1rem;
-      //   justify-content: space-between;
-      //   margin: 0 0 1.25rem;
-      //   padding-bottom: 1.25rem;
-      // }
-
-      // .phone-confirmed p {
-      //   margin: 0;
-      // }
-
-      // .phone-confirmed__label {
-      //   color: var(--es-color-neutral-600);
-      //   display: block;
-      //   font-size: 0.8125rem;
-      // }
-
-      // .phone-confirmed__number {
-      //   color: var(--es-color-neutral-900);
-      //   font-size: 1.0625rem;
-      // }
-
-      // .phone-confirmed__actions {
-      //   align-items: center;
-      //   display: flex;
-      //   gap: 1rem;
-      //   white-space: nowrap;
-      // }
-
-      // .otp-actions {
-      //   align-items: center;
-      //   display: flex;
-      //   gap: 0.75rem;
-      // }
-
-      // .resend-countdown {
-      //   color: var(--es-color-neutral-600);
-      //   font-size: 0.8125rem;
-      //   font-weight: 650;
-      // }
-
-      // .change-number {
-      //   background: none;
-      //   border: 0;
-      //   color: var(--es-color-accent-dark);
-      //   cursor: pointer;
-      //   font-size: 0.8125rem;
-      //   font-weight: 700;
-      //   justify-self: start;
-      //   padding: 0;
-      //   text-decoration: underline;
-      // }
-
-      // .change-number:hover {
-      //   color: var(--es-color-primary-hover);
-      // }
-
-      // .phone-field,
-      // .otp-field {
-      //   display: grid;
-      //   gap: 0.375rem;
-      // }
-
-      // .phone-field__label,
-      // .otp-field__label {
-      //   color: var(--es-color-neutral-700);
-      //   font-weight: 650;
-      // }
-
-      // .phone-input {
-      //   align-items: stretch;
-      //   display: flex;
-      // }
-
-      // .phone-input__prefix {
-      //   align-items: center;
-      //   background: var(--es-color-neutral-100);
-      //   border: 1px solid #cbd8e7;
-      //   border-radius: var(--es-radius-sm) 0 0 var(--es-radius-sm);
-      //   border-right: 0;
-      //   color: var(--es-color-neutral-700);
-      //   display: flex;
-      //   font-weight: 700;
-      //   gap: 0.375rem;
-      //   padding: 0 0.75rem;
-      //   white-space: nowrap;
-      // }
-
-      // .phone-input__flag {
-      //   font-size: 1rem;
-      // }
-
-      // .phone-input input {
-      //   border-radius: 0 var(--es-radius-sm) var(--es-radius-sm) 0;
-      //   flex: 1;
-      //   min-width: 0;
-      // }
-
-      // .otp-boxes {
-      //   display: flex;
-      //   gap: 0.625rem;
-      // }
-
-      // .otp-box {
-      //   border: 1px solid #cbd8e7;
-      //   border-radius: var(--es-radius-sm);
-      //   font-size: 1.5rem;
-      //   font-weight: 700;
-      //   height: 3.25rem;
-      //   text-align: center;
-      //   width: 3rem;
-      // }
-
-      // .otp-box:focus {
-      //   border-color: var(--es-color-accent);
-      //   box-shadow: 0 0 0 3px rgba(0, 168, 121, 0.14);
-      //   outline: 0;
-      // }
-
-      // @media (max-width: 420px) {
-      //   .otp-box {
-      //     height: 2.75rem;
-      //     width: 2.5rem;
-      //   }
-      // }
       /* ── currency style ───────────────────────────────── */
 
       .currency-input {
@@ -1255,6 +1176,29 @@ type GroupSelection = Record<string, DocumentType>;
         color: var(--es-color-neutral-600);
         font-size: 0.75rem;
         font-weight: 400;
+      }
+
+      //business detail
+
+      .business-locked__hint {
+        align-items: center;
+        background: rgba(0, 168, 121, 0.08);
+        border-radius: var(--es-radius-sm);
+        color: var(--es-color-accent-dark);
+        display: flex;
+        font-size: 0.8125rem;
+        font-weight: 650;
+        gap: 0.375rem;
+        margin: 0 0 1rem;
+        padding: 0.75rem 1rem;
+      }
+
+      input:disabled,
+      select:disabled {
+        background: var(--es-color-neutral-100);
+        color: var(--es-color-neutral-700);
+        cursor: not-allowed;
+        opacity: 0.85;
       }
 
       /* ── KYC groups ───────────────────────────────── */
@@ -1483,18 +1427,6 @@ type GroupSelection = Record<string, DocumentType>;
         margin: 0;
       }
 
-      .kyc-submit__status {
-        align-items: center;
-        background: #def7ec;
-        border-radius: var(--es-radius-sm);
-        color: #03543f;
-        display: flex;
-        font-size: 0.875rem;
-        font-weight: 700;
-        gap: 0.5rem;
-        padding: 0.75rem 1rem;
-      }
-
       .success-dialog {
         cursor: default;
         justify-items: center;
@@ -1526,6 +1458,42 @@ type GroupSelection = Record<string, DocumentType>;
         color: var(--es-color-neutral-600);
         margin: 0 0 0.5rem;
         max-width: 24rem;
+      }
+
+      //expiry date style
+
+      .expiry-info {
+        align-items: center;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        margin-top: 0.75rem;
+      }
+
+      .expiry-info__label {
+        color: var(--es-color-neutral-600);
+        font-size: 0.8125rem;
+      }
+
+      .expiry-info__value {
+        color: var(--es-color-neutral-900);
+        font-size: 0.875rem;
+      }
+
+      .expiry-info__pending {
+        color: var(--es-color-neutral-600);
+        font-size: 0.8125rem;
+        font-style: italic;
+      }
+
+      .expiry-info__warning {
+        background: #fde8e8;
+        border-radius: var(--es-radius-sm);
+        color: #9b1c1c;
+        font-size: 0.75rem;
+        font-weight: 650;
+        padding: 0.25rem 0.5rem;
+        width: 100%;
       }
 
       /* image preview (popup) styles */
@@ -1790,6 +1758,7 @@ export class OnboardingComponent {
     'OTHER',
   ];
 
+  readonly phoneVerified = signal(false);
   readonly step = signal<UiStep>('phone');
   readonly loading = signal(false);
   readonly otpRequested = signal(false);
@@ -1802,6 +1771,10 @@ export class OnboardingComponent {
   readonly approvalMessage = signal(
     'Your merchant onboarding request has been submitted.',
   );
+
+  private readonly businessFormTick = signal(0);
+
+  private readonly emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
   /** What the user sees in the input, e.g. "1,300,000" */
   readonly estimatedMonthlyRevenueDisplay = signal('');
@@ -1828,9 +1801,13 @@ export class OnboardingComponent {
     () => !this.otpRequested() && this.resendSecondsRemaining() > 0,
   );
 
+  /** True once the current file set has been submitted this session; resets on any new/replaced upload */
+  readonly kycSubmittedThisSession = signal(false);
+
   readonly verifyOtpDisabled = computed(
     () => this.loading() || !this.otpRequested() || !this.otpCodeValid(),
   );
+
   /** Epoch ms when resend becomes available, null when no OTP is in flight */
   readonly resendAvailableAt = signal<number | null>(null);
   private readonly nowTick = signal(Date.now());
@@ -1856,15 +1833,6 @@ export class OnboardingComponent {
   );
 
   constructor() {
-    effect(() => {
-      if (
-        this.kycAlreadySubmitted() &&
-        this.submittedFileFingerprint() === null
-      ) {
-        this.submittedFileFingerprint.set(this.currentFileFingerprint());
-      }
-    });
-
     this.destroyRef.onDestroy(() => {
       this.stopCountdown();
       this.clearAllStatusTimeouts();
@@ -1886,32 +1854,11 @@ export class OnboardingComponent {
     ...new Set(this.kycDocuments().map((doc) => doc.id)),
   ]);
 
-  /** Fingerprint of every uploaded file id, used to detect changes since last submit */
-  readonly currentFileFingerprint = computed<string>(() =>
-    this.kycDocuments()
-      .flatMap((doc) => doc.files.map((file) => file.id))
-      .sort()
-      .join(','),
-  );
-
-  /** Fingerprint captured at the moment of the last successful submit; null until first submit this session */
-  readonly submittedFileFingerprint = signal<string | null>(null);
-
-  readonly kycAlreadySubmitted = computed(() => {
-    const status = this.state()?.review?.kyc?.status;
-    return !!status && status !== 'NOT_STARTED';
-  });
-
-  readonly kycDirtySinceSubmit = computed(() => {
-    const baseline = this.submittedFileFingerprint();
-    return baseline === null || this.currentFileFingerprint() !== baseline;
-  });
-
   readonly canSubmitKyc = computed(
     () =>
       this.allGroupsSatisfied() &&
       !this.anyUploadInProgress() &&
-      (!this.kycAlreadySubmitted() || this.kycDirtySinceSubmit()),
+      !this.kycSubmittedThisSession(),
   );
 
   readonly kycSubmitSuccess = signal(false);
@@ -1994,13 +1941,27 @@ export class OnboardingComponent {
       : 'application/pdf,image/jpeg,image/png,image/webp';
   });
 
+  readonly businessDetailsValid = computed(() => {
+    this.businessFormTick(); // establishes the reactive dependency
+    const b = this.business;
+    return (
+      b.businessName.trim().length > 0 &&
+      b.businessNameAm.trim().length > 0 &&
+      !!b.businessType &&
+      this.emailPattern.test(b.email.trim()) &&
+      b.estimatedMonthlyRevenue !== null &&
+      b.estimatedMonthlyRevenue > 0
+    );
+  });
+
+  readonly businessDetailsLocked = computed(() => {
+    const checklist = this.state()?.checklist;
+    return !!checklist?.businessDetailsCompleted;
+  });
+
   // ── Helpers ──────────────────────────────────────────────────────────────
 
   /** True when the minimum required business fields are filled. */
-
-  businessFormValid(): boolean {
-    return this.business.businessName.trim().length > 0;
-  }
 
   private optionFor(documentType: DocumentType): KycDocumentOption | undefined {
     for (const group of this.kycGroups()) {
@@ -2082,6 +2043,39 @@ export class OnboardingComponent {
       const end = input.value.length;
       input.setSelectionRange(end, end);
     });
+  }
+
+  onBusinessFieldChange(): void {
+    this.businessFormTick.update((n) => n + 1);
+  }
+
+  private readonly expiryRequiredTypes: ReadonlySet<DocumentType> = new Set([
+    'PASSPORT',
+    'DRIVERS_LICENSE',
+    'TRADE_LICENSE',
+  ]);
+
+  requiresExpiryDate(option: KycDocumentOption): boolean {
+    return this.expiryRequiredTypes.has(option.documentType);
+  }
+
+  formatExpiryDate(value: string): string {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+      return value;
+    }
+    return date.toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+    });
+  }
+
+  canVisit(target: UiStep): boolean {
+    if (target === 'phone') {
+      return !this.phoneVerified();
+    }
+    return Boolean(this.session.accessToken());
   }
 
   //helper methods for display images in their line rather than intop which is not convenent to see for user
@@ -2254,117 +2248,13 @@ export class OnboardingComponent {
     }));
   }
 
-  onFileChange(
-    option: KycDocumentOption,
-    side: DocumentSide,
-    event: Event,
-  ): void {
-    const input = event.target as HTMLInputElement;
-    const file = input.files?.[0];
-    if (!file) return;
-
-    const key = this.keyFor(option.documentType, side);
-    const policy = this.uploadPolicy();
-
-    if (policy) {
-      if (file.size > policy.maxFileSizeBytes) {
-        this.setSideStatus(
-          key,
-          'error',
-          `File exceeds the ${policy.maxFileSizeLabel} size limit.`,
-        );
-        input.value = '';
-        return;
-      }
-      if (!policy.allowedContentTypes.includes(file.type)) {
-        this.setSideStatus(
-          key,
-          'error',
-          `Only ${this.allowedFormatsLabel(policy)} files are accepted.`,
-        );
-        input.value = '';
-        return;
-      }
-    }
-
-    this.clearSideStatus(key);
-    this.beginUpload(key);
-
-    this.api
-      .uploadKycDocument(option.documentType, side, file)
-      .pipe(
-        switchMap(() => this.refreshState()),
-        finalize(() => {
-          this.endUpload(key);
-          input.value = '';
-        }),
-      )
-      .subscribe({
-        next: () => {
-          this.setSideStatus(
-            key,
-            'success',
-            `${option.displayName} ${side} uploaded successfully.`,
-          );
-        },
-        error: (err: unknown) => {
-          this.setSideStatus(key, 'error', this.extractErrorMessage(err));
-        },
-      });
-  }
-
-  submitAllKyc(): void {
-    const documentIds = this.documentIdsForSubmit();
-
-    if (documentIds.length === 0) {
-      this.kycSubmitError.set(
-        'No documents found to submit. Please upload all required documents first.',
-      );
-      return;
-    }
-
-    this.kycSubmitError.set('');
-    this.loading.set(true);
-
-    this.api
-      .submitKyc({ documentIds })
-      .pipe(
-        switchMap(() => this.refreshState()),
-        finalize(() => this.loading.set(false)),
-      )
-      .subscribe({
-        next: () => {
-          this.submittedFileFingerprint.set(this.currentFileFingerprint());
-          this.showKycSuccess();
-        },
-        error: (err: unknown) => {
-          this.kycSubmitError.set(this.extractErrorMessage(err));
-        },
-      });
-  }
-
-  continueAfterKycSubmit(): void {
-    if (this.kycSuccessTimeout !== null) {
-      clearTimeout(this.kycSuccessTimeout);
-      this.kycSuccessTimeout = null;
-    }
-    this.kycSubmitSuccess.set(false);
-    this.message.set('KYC submitted for review.');
-    this.step.set('settlement');
-  }
-
-  requestOtp(isResend = false): void {
+  requestOtp(): void {
     this.run(() =>
       this.api.requestPhoneOtp({ phone: this.fullPhone() }).subscribe({
         next: (response) => {
           this.otpRequested.set(true);
           this.resetOtpDigits();
           this.startCountdown(response.resendAfterSeconds);
-          // this.message.set(
-          //   isResend
-          //     ? `A new code was sent to ${response.phone}.`
-          //     : `Enter the OTP we sent to ${response.phone}.`,
-          // );
           this.focusOtpBox(0);
         },
         error: (err: unknown) => this.showError(err),
@@ -2398,6 +2288,7 @@ export class OnboardingComponent {
         )
         .subscribe({
           next: ({ state, uploadPolicy, settlementOptions }) => {
+            this.phoneVerified.set(true);
             this.state.set(state);
             this.uploadPolicy.set(uploadPolicy);
             this.initGroupSelections(state.kycRequirements ?? []);
@@ -2457,6 +2348,106 @@ export class OnboardingComponent {
           complete: () => this.loading.set(false),
         }),
     );
+  }
+
+  onFileChange(
+    option: KycDocumentOption,
+    side: DocumentSide,
+    event: Event,
+  ): void {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+
+    const key = this.keyFor(option.documentType, side);
+    const policy = this.uploadPolicy();
+
+    if (policy) {
+      if (file.size > policy.maxFileSizeBytes) {
+        this.setSideStatus(
+          key,
+          'error',
+          `File exceeds the ${policy.maxFileSizeLabel} size limit.`,
+        );
+        input.value = '';
+        return;
+      }
+      if (!policy.allowedContentTypes.includes(file.type)) {
+        this.setSideStatus(
+          key,
+          'error',
+          `Only ${this.allowedFormatsLabel(policy)} files are accepted.`,
+        );
+        input.value = '';
+        return;
+      }
+    }
+
+    this.clearSideStatus(key);
+    this.beginUpload(key);
+
+    this.api
+      .uploadKycDocument(option.documentType, side, file)
+      .pipe(
+        switchMap(() => this.refreshState()),
+        finalize(() => {
+          this.endUpload(key);
+          input.value = '';
+        }),
+      )
+      .subscribe({
+        next: () => {
+          this.kycSubmittedThisSession.set(false);
+          this.setSideStatus(
+            key,
+            'success',
+            `${option.displayName} ${side} uploaded successfully.`,
+          );
+        },
+        error: (err: unknown) => {
+          this.setSideStatus(key, 'error', this.extractErrorMessage(err));
+        },
+      });
+  }
+
+  submitAllKyc(): void {
+    const documentIds = this.documentIdsForSubmit();
+
+    if (documentIds.length === 0) {
+      this.kycSubmitError.set(
+        'No documents found to submit. Please upload all required documents first.',
+      );
+      return;
+    }
+
+    this.kycSubmitError.set('');
+    this.loading.set(true);
+
+    this.api
+      .submitKyc({ documentIds })
+      .pipe(
+        switchMap(() => this.refreshState()),
+        finalize(() => this.loading.set(false)),
+      )
+      .subscribe({
+        next: () => {
+          this.kycSubmittedThisSession.set(true);
+          this.showKycSuccess();
+        },
+        error: (err: unknown) => {
+          this.kycSubmitError.set(this.extractErrorMessage(err));
+        },
+      });
+  }
+
+  continueAfterKycSubmit(): void {
+    if (this.kycSuccessTimeout !== null) {
+      clearTimeout(this.kycSuccessTimeout);
+      this.kycSuccessTimeout = null;
+    }
+    this.kycSubmitSuccess.set(false);
+    // this.message.set('KYC submitted for review.');
+    this.step.set('settlement');
   }
 
   linkSettlementAccount(): void {
@@ -2540,11 +2531,6 @@ export class OnboardingComponent {
     );
   }
 
-  canVisit(target: UiStep): boolean {
-    if (target === 'phone') return true;
-    return Boolean(this.session.accessToken());
-  }
-
   goTo(target: UiStep): void {
     if (this.canVisit(target)) this.step.set(target);
   }
@@ -2564,14 +2550,6 @@ export class OnboardingComponent {
   goToLogin(): void {
     window.location.assign('/login');
   }
-
-  // onBeforeInput(event: InputEvent): void {
-  //   // 1. Only intercept if actual text/data is being inserted
-  //   // 2. If it's not a digit (0-9), block it
-  //   if (event.data && !/^[0-9]+$/.test(event.data)) {
-  //     event.preventDefault();
-  //   }
-  // }
 
   // ── Private helpers ───────────────────────────────────────────────────────
 
