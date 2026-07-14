@@ -19,8 +19,6 @@ import { ChangeDetectionStrategy, Component, input, output } from '@angular/core
   `,
   styles: [
     `
-      @import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0');
-
       .es-empty {
         display: grid;
         gap: 0.75rem;
@@ -29,15 +27,16 @@ import { ChangeDetectionStrategy, Component, input, output } from '@angular/core
         text-align: center;
       }
 
-     .es-empty__icon {
-     align-items: center;
-     background: var(--es-gradient-brand); /* same gradient */
-     border-radius: 999px;
-     color: white; /* ✅ ensures icon stands out */
-     display: inline-flex;
-     height: 3rem;
-     justify-content: center;
-     width: 3rem;    }
+      .es-empty__icon {
+        align-items: center;
+        background: var(--es-gradient-brand);
+        border-radius: 999px;
+        color: white;
+        display: inline-flex;
+        height: 3rem;
+        justify-content: center;
+        width: 3rem;
+      }
 
       .material-symbols-outlined {
         font-family: 'Material Symbols Outlined';
@@ -64,7 +63,7 @@ import { ChangeDetectionStrategy, Component, input, output } from '@angular/core
       button {
         border: 0;
         border-radius: var(--es-radius-sm);
-        background:var(--es-gradient-brand); /* same gradient*/
+        background: var(--es-gradient-brand);
         color: white;
         cursor: pointer;
         font: inherit;

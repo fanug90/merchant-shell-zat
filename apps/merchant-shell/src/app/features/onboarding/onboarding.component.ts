@@ -1112,16 +1112,10 @@ export class OnboardingComponent {
   disableLinkAccountButton = false;
 
   private refreshBankAccounts(): void {
-    this.api.listBankAccounts().subscribe({
+    this.loadBankAccounts().subscribe({
       next: (accounts) => {
         this.bankAccounts.set(accounts);
-
-        // ✅ Disable Link account if maximum reached
-        if (accounts.length >= 5) {
-          this.disableLinkAccountButton = true;
-        } else {
-          this.disableLinkAccountButton = false;
-        }
+        this.disableLinkAccountButton = accounts.length >= 5;
       },
       error: (error) => this.showErrorMessage(error),
       complete: () => this.loading.set(false),
