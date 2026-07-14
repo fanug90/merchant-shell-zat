@@ -1,6 +1,6 @@
 import { HttpClient, HttpHeaders, HttpParams } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
-import { Observable } from 'rxjs';
+import { Observable, map } from 'rxjs';
 import { CORE_API_CONFIG, DEFAULT_CORE_API_CONFIG } from './core-api.config';
 import { OnboardingSessionService } from './onboarding-session.service';
 import {
@@ -22,6 +22,8 @@ import {
   PhoneOtpVerificationRequest,
   PhoneOtpVerificationResponse,
   SettlementOptionResponse,
+  UploadPolicyResponse,
+  normalizePhoneOtpVerificationResponse,
 } from './onboarding.types';
 
 @Injectable({ providedIn: 'root' })
@@ -35,10 +37,12 @@ export class OnboardingApiService {
   }
 
   verifyPhoneOtp(request: PhoneOtpVerificationRequest): Observable<PhoneOtpVerificationResponse> {
-    return this.http.post<PhoneOtpVerificationResponse>(
-      this.url('/v1/onboarding/phone/otp/verify'),
-      request
-    );
+    return this.http
+      .post<PhoneOtpVerificationResponse & Record<string, unknown>>(
+        this.url('/v1/onboarding/phone/otp/verify'),
+        request
+      )
+      .pipe(map((response) => normalizePhoneOtpVerificationResponse(response)));
   }
 
   getOnboardingState(): Observable<OnboardingStateResponse> {
@@ -60,6 +64,10 @@ export class OnboardingApiService {
       this.url('/v1/merchants/me/kyc/requirements'),
       this.authOptions()
     );
+  }
+
+  getUploadPolicy(): Observable<UploadPolicyResponse> {
+    return this.http.get<UploadPolicyResponse>(this.url('/v1/upload-policy'));
   }
 
   uploadKycDocument(

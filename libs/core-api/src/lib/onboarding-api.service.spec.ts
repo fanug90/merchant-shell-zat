@@ -53,6 +53,27 @@ describe('OnboardingApiService', () => {
     });
   });
 
+  it('normalizes wrapped token object responses', () => {
+    api.verifyPhoneOtp({ phone: '+251912345678', otpCode: '123456' }).subscribe((response) => {
+      expect(response.accessToken).toBe('wrapped-access-token');
+      expect(response.refreshToken).toBe('wrapped-refresh-token');
+      expect(response.tokenType).toBe('Bearer');
+      expect(response.expiresInSeconds).toBe(1800);
+    });
+
+    const request = http.expectOne('http://merchant-service.test/v1/onboarding/phone/otp/verify');
+    expect(request.request.method).toBe('POST');
+    request.flush({
+      phone_verified: true,
+      token: {
+        accessToken: 'wrapped-access-token',
+        refreshToken: 'wrapped-refresh-token',
+        tokenType: 'Bearer',
+        expiresInSeconds: 1800,
+      },
+    });
+  });
+
   it('attaches the verified onboarding bearer token to protected onboarding requests', () => {
     session.setVerification('+251912345678', {
       phoneVerified: true,
@@ -103,4 +124,61 @@ describe('OnboardingApiService', () => {
       fileName: 'front.png',
     });
   });
+  it('links a settlement account successfully', () => {
+    session.setVerification('+251912345678', {
+      phoneVerified: true,
+      accessToken: 'onboarding-access-token',
+      tokenType: 'Bearer',
+      expiresInSeconds: 300,
+    });
+
+    api.linkBankAccount({
+      bankCode: 'CBE',
+      accountNumber: '1234567890',
+      makeDefault: true,
+    }).subscribe((response) => {
+      expect(response.id).toBe('ACC-00001');
+      expect(response.bankCode).toBe('CBE');
+      expect(response.accountNumber).toBe('1234567890');
+      expect(response.defaultAccount).toBe(true);
+    });
+
+    const request = http.expectOne('http://merchant-service.test/v1/merchants/me/bank-accounts');
+    expect(request.request.method).toBe('POST');
+    expect(request.request.headers.get('Authorization')).toBe('Bearer onboarding-access-token');
+    expect(request.request.body).toEqual({
+      bankCode: 'CBE',
+      accountNumber: '1234567890',
+      makeDefault: true,
+    });
+
+    request.flush({
+      id: 'ACC-00001',
+      bankCode: 'CBE',
+      accountNumber: '1234567890',
+      defaultAccount: true,
+    });
+  });
+it('fetches upload policy successfully', () => {
+  api.getUploadPolicy().subscribe((response) => {
+    expect(response.maxFileSizeBytes).toBe(10485760);
+    expect(response.maxFileSizeLabel).toBe('10MB');
+    expect(response.allowedContentTypes).toContain('image/png');
+  });
+
+  const request = http.expectOne('http://merchant-service.test/v1/upload-policy');
+  expect(request.request.method).toBe('GET');
+
+  request.flush({
+    maxFileSizeBytes: 10485760,
+    maxFileSizeLabel: '10MB',
+    allowedContentTypes: [
+      'application/pdf',
+      'image/jpeg',
+      'image/png',
+      'image/webp',
+    ],
+  });
+});
+
 });

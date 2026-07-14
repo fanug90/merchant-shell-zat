@@ -50,6 +50,39 @@ export interface PhoneOtpVerificationResponse {
   expiresInSeconds: number;
 }
 
+export function normalizePhoneOtpVerificationResponse(
+  response: PhoneOtpVerificationResponse | Record<string, unknown>
+): PhoneOtpVerificationResponse {
+  const tokenObj = (response as any).token; // NEW: unwrap token object
+
+  const accessToken =
+    tokenObj?.accessToken ??                       // NEW
+    (response as any).accessToken ??
+    (response as any)['access_token'] ??
+    (response as any)['onboardingAccessToken'] ??
+    (response as any)['onboarding_access_token'] ??
+    (response as any)['token'];
+
+  if (!accessToken) {
+    throw new Error('OTP verification succeeded but the server did not return an access token.');
+  }
+
+  const expiresInSeconds =
+    tokenObj?.expiresInSeconds ??                  // NEW
+    (response as any).expiresInSeconds ??
+    (response as any)['expires_in_seconds'] ??
+    (response as any)['expires_in'] ??
+    3600;
+
+  return {
+    phoneVerified: (response as any).phoneVerified ?? Boolean((response as any)['phone_verified'] ?? true),
+    accessToken,
+    refreshToken: tokenObj?.refreshToken ?? (response as any).refreshToken ?? (response as any)['refresh_token'],
+    tokenType: tokenObj?.tokenType ?? (response as any).tokenType ?? (response as any)['token_type'] ?? 'Bearer',
+    expiresInSeconds,
+  };
+}
+
 export interface AddressDto {
   city?: string;
   subcity?: string;
@@ -105,6 +138,12 @@ export interface KycDocumentUploadResponse {
   fileName: string;
   fileUrl?: string;
   expiryDate?: string;
+}
+
+export interface UploadPolicyResponse {
+  maxFileSizeBytes: number;
+  maxFileSizeLabel?: string;
+  allowedContentTypes: string[];
 }
 
 export interface KycSubmitRequest {
@@ -176,6 +215,8 @@ export interface OnboardingSubmitRequest {
   acceptTermsOfService: boolean;
   acceptPrivacyPolicy: boolean;
   acceptNbeConsent: boolean;
+  password: string;
+  confirmPassword: string;
 }
 
 export interface OnboardingSubmitResponse {

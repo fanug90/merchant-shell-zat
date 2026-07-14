@@ -1,6 +1,8 @@
+import { HttpErrorResponse } from '@angular/common/http';
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import {
+  ApiError,
   BankAccountResponse,
   BusinessType,
   DocumentSide,
@@ -9,7 +11,9 @@ import {
   OnboardingApiService,
   OnboardingSessionService,
   OnboardingStateResponse,
+  OnboardingSubmitResponse,
   SettlementOptionResponse,
+  UploadPolicyResponse,
 } from '@zat-main-web/core-api';
 import {
   EsButtonComponent,
@@ -18,7 +22,7 @@ import {
   EsSpinnerComponent,
   EsStatusBadgeComponent,
 } from '@zat-main-web/shared-ui';
-import { forkJoin, of, switchMap } from 'rxjs';
+import { Observable, catchError, forkJoin, of, switchMap, throwError } from 'rxjs';
 
 type UiStep = 'phone' | 'business' | 'kyc' | 'settlement' | 'review' | 'done';
 
@@ -61,13 +65,22 @@ interface UploadedKycFile {
         }
       </section>
 
-      @if (message()) {
-        <p class="message" role="status">{{ message() }}</p>
-      }
 
-      @if (error()) {
-        <p class="error" role="alert">{{ error() }}</p>
-      }
+<div class="popup-container">
+  @if (message()) {
+    <div class="message" role="status">
+      <button class="close" (click)="message.set('')">×</button>
+      <span>{{ message() }}</span>
+    </div>
+  }
+
+  @if (error()) {
+    <div class="error" role="alert">
+      <button class="close" (click)="error.set('')">×</button>
+      <span>{{ error() }}</span>
+    </div>
+  }
+</div>
 
       @if (loading()) {
         <div class="loading"><es-spinner label="Working..." /></div>
@@ -165,10 +178,19 @@ interface UploadedKycFile {
                   @for (side of selectedRequirement()?.requiredSides ?? []; track side) {
                     <label class="upload">
                       {{ side }}
-                      <input type="file" accept="image/*,.pdf" (change)="uploadKycFile(side, $event)" />
+                      <input type="file" [accept]="uploadAccept()" (change)="uploadKycFile(side, $event)" />
                     </label>
                   }
                 </section>
+
+                <!--
+                   @if (uploadPolicy(); as policy) {
+                     <p class="upload-policy">
+                          Max {{ uploadLimitLabel(policy) }}. Accepted: {{ uploadTypeLabels(policy).join(', ') }}.
+                               </p>
+                                     }
+                       -->
+
 
                 @if (uploadedFiles().length) {
                   <ul class="uploads">
@@ -205,7 +227,10 @@ interface UploadedKycFile {
                 <input type="checkbox" name="makeDefault" [(ngModel)]="settlement.makeDefault" />
                 Make this my default settlement account
               </label>
-              <es-button type="submit" [disabled]="loading()">Link account</es-button>
+              <es-button type="submit" [disabled]="loading() || disableLinkAccountButton">
+  Link account
+</es-button>
+
             </form>
 
             @if (bankAccounts().length) {
@@ -220,7 +245,12 @@ interface UploadedKycFile {
                   </button>
                 }
               </div>
-            }
+}
+
+            <div class="navigation">
+    <button type="button" class="previous" (click)="goToPreviousStep()" [disabled]="!canGoPrevious()">Previous</button>
+    <button type="button" class="next" (click)="goToNextStep()" [disabled]="!canGoNext()">Next</button>
+  </div>
           </es-card>
         }
 
@@ -228,25 +258,44 @@ interface UploadedKycFile {
           <es-card title="Review and submit" subtitle="Submit once all required onboarding checklist items are complete.">
             @if (state(); as onboardingState) {
               <div class="review">
-                <div><span>Merchant</span><strong>{{ onboardingState.review?.merchant?.businessName || 'Not captured' }}</strong></div>
-                <div><span>KYC</span><strong>{{ onboardingState.review?.kyc?.status || 'Not submitted' }}</strong></div>
-                <div><span>Settlement</span><strong>{{ onboardingState.review?.settlementAccount?.accountNumber || 'Not linked' }}</strong></div>
+                <div class="review-card"><span>Merchant</span><strong>{{ onboardingState.review?.merchant?.businessName || 'Not captured' }}</strong></div>
+                <div class="review-card"><span>KYC</span><strong>{{ reviewLabel(onboardingState.review?.kyc?.status || 'Not submitted') }}</strong></div>
+                <div class="review-card"><span>Settlement</span><strong>{{ onboardingState.review?.settlementAccount?.accountNumber || 'Not linked' }}</strong></div>
               </div>
-              @if (onboardingState.blockers?.length) {
-                <ul class="blockers">
-                  @for (blocker of onboardingState.blockers; track blocker) {
-                    <li>{{ blocker }}</li>
-                  }
-                </ul>
-              }
+            @if (onboardingState.blockers?.length) {
+  <section class="attention-panel" aria-label="Items to complete">
+    <ul class="blockers">
+      @for (blocker of onboardingState.blockers; track blocker) {
+        <li class="blocker-item">{{ reviewLabel(blocker) }}</li>
+      }
+    </ul>
+  </section>
+}
+
+
+
             }
 
             <form class="form" (ngSubmit)="submitOnboarding()">
               <label class="checkbox"><input type="checkbox" name="terms" [(ngModel)]="consents.terms" /> Accept terms of service</label>
               <label class="checkbox"><input type="checkbox" name="privacy" [(ngModel)]="consents.privacy" /> Accept privacy policy</label>
               <label class="checkbox"><input type="checkbox" name="nbe" [(ngModel)]="consents.nbe" /> Accept NBE consent</label>
-              <es-button type="submit" [disabled]="loading() || !allConsentsAccepted()">Submit onboarding</es-button>
+              <div class="two">
+                <label>
+                  Password
+                  <input type="password" name="password" required minlength="8" autocomplete="new-password" [(ngModel)]="password" />
+                </label>
+                <label>
+                  Confirm password
+                  <input type="password" name="confirmPassword" required minlength="8" autocomplete="new-password" [(ngModel)]="confirmPassword" />
+                </label>
+              </div>
+              <es-button type="submit" [disabled]="loading() || !canSubmitReview()">Submit onboarding</es-button>
             </form>
+
+            <div class="navigation">
+  <button type="button" class="previous" (click)="goToPreviousStep()" [disabled]="!canGoPrevious()">Previous</button>
+  </div>
           </es-card>
         }
 
@@ -418,22 +467,99 @@ interface UploadedKycFile {
       .checkbox input {
         min-height: auto;
       }
+        
+.navigation {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 1.5rem; /* pushes buttons down */
+}
 
-      .message,
-      .error {
-        border-radius: var(--es-radius-sm);
-        padding: 0.875rem 1rem;
-      }
+.navigation button {
+  border: none;
+  border-radius: var(--es-radius-sm);
+  padding: 0.75rem 1.5rem;
+  font-weight: 600;
+  cursor: pointer;
+}
 
-      .message {
-        background: #def7ec;
-        color: #03543f;
-      }
+.navigation button.next {
+  background: var(--es-gradient-brand); /* identical to Link account */
+  color: white;
+}
 
-      .error {
-        background: #fde8e8;
-        color: #9b1c1c;
-      }
+.navigation button.previous {
+  background: #e2e8f0; /* neutral gray */
+  color: #061a40;
+}
+
+
+
+
+.message,
+.error {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  border-radius: var(--es-radius-sm);
+ padding: 1.5rem 1.5rem 1rem; /* extra top padding for space below X */
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  z-index: 1000;
+
+  display: flex;
+  flex-direction: column; /* ✅ stack text and button vertically */
+  align-items: center;    /* ✅ center horizontally */
+  gap: 0.5rem;            /* ✅ small space between text and button */
+  border: none;           /* ✅ remove highlighted line */
+}
+
+close {
+  position: absolute;           /* ✅ pinned in top corner */
+  top: -0.5rem;
+  right: 0.5rem;
+  background: none;
+  border: none;
+  font-size: 1.25rem;
+  font-weight: bold;
+  cursor: pointer;
+  color: inherit;
+}
+
+.message span,
+.error span {
+  margin-bottom: 0.5rem;    /* ✅ space between text and button */
+}
+
+.continue {
+  background: #0d9488; /* ✅ teal for success */
+}
+
+.retry {
+  background: #b91c1c; /* ✅ red for error */
+}
+
+.close {
+  position: absolute;
+  top: 0rem;
+  right: 0rem;
+  background: none;
+  border: none;
+  font-size: 1.25rem;
+  font-weight: bold;
+  cursor: pointer;
+  color: inherit;
+}
+
+
+.message {
+  background: #def7ec;  /* green success/info background */
+  color: #03543f;       /* dark green text */
+}
+
+.error {
+  background: #fde8e8;  /* red error background */
+  color: #9b1c1c;       /* dark red text */
+}
 
       .loading {
         background: white;
@@ -461,6 +587,12 @@ interface UploadedKycFile {
         margin: 0;
         padding-left: 1.25rem;
       }
+.accounts {
+  margin-top: 1rem;   /* ✅ adds space above the accounts list */
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+}
 
       .accounts button {
         background: white;
@@ -489,6 +621,13 @@ interface UploadedKycFile {
         display: block;
         font-size: 0.8125rem;
       }
+.blocker-item {
+  font-weight: 700;
+  color: #9b1c1c; /* red warning tone */
+  background: #fde8e8; /* light red background */
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--es-radius-sm);
+}
 
       @media (max-width: 760px) {
         .onboarding {
@@ -540,6 +679,7 @@ export class OnboardingComponent {
   readonly settlementOptions = signal<SettlementOptionResponse[]>([]);
   readonly bankAccounts = signal<BankAccountResponse[]>([]);
   readonly uploadedFiles = signal<UploadedKycFile[]>([]);
+  readonly uploadPolicy = signal<UploadPolicyResponse | null>(null);
   readonly selectedBankAccountId = signal<string | null>(null);
   readonly approvalMessage = signal('Your merchant onboarding request has been submitted.');
 
@@ -570,6 +710,9 @@ export class OnboardingComponent {
     nbe: false,
   };
 
+  password = '';
+  confirmPassword = '';
+
   readonly enabledRequirements = computed(() =>
     this.requirements().filter((requirement) => requirement.enabled)
   );
@@ -579,17 +722,29 @@ export class OnboardingComponent {
   readonly uploadedDocumentIds = computed(() => [
     ...new Set(this.uploadedFiles().map((file) => file.documentId)),
   ]);
+  readonly uploadAccept = computed(() => {
+    const contentTypes = this.uploadPolicy()?.allowedContentTypes;
+
+    return contentTypes?.length ? contentTypes.join(',') : 'image/*,.pdf';
+  });
+
+  constructor() {
+    this.api.getUploadPolicy().subscribe({
+      next: (policy) => this.uploadPolicy.set(policy),
+      error: () => this.uploadPolicy.set(null),
+    });
+  }
 
   requestOtp(): void {
     this.run(() =>
       this.api.requestPhoneOtp({ phone: this.phone }).subscribe({
         next: (response) => {
           this.otpRequested.set(true);
-          this.message.set(
+          this.showMessage(
             `OTP accepted for ${response.phone}. Resend available after ${response.resendAfterSeconds} seconds.`
           );
         },
-        error: (error) => this.showError(error),
+        error: (error) => this.showErrorMessage(error),
         complete: () => this.loading.set(false),
       })
     );
@@ -606,26 +761,30 @@ export class OnboardingComponent {
               state: this.api.getOnboardingState(),
               requirements: this.api.listKycRequirements(),
               settlementOptions: this.api.listSettlementOptions(),
-              bankAccounts: this.api.listBankAccounts(),
             });
           })
         )
         .subscribe({
-          next: ({ state, requirements, settlementOptions, bankAccounts }) => {
+          next: ({ state, requirements, settlementOptions }) => {
             this.state.set(state);
             this.requirements.set(requirements);
             this.setDefaultDocumentType(requirements);
             this.settlementOptions.set(settlementOptions);
             this.setDefaultSettlementOption(settlementOptions);
-            this.bankAccounts.set(bankAccounts);
-            this.message.set('Phone verified. Continue with business details.');
+            this.showMessage('Phone verified. Continue with business details.');
             this.step.set('business');
           },
-          error: (error) => this.showError(error),
+          error: (error) => this.showErrorMessage(error),
           complete: () => this.loading.set(false),
         })
     );
   }
+
+  private showMessage(text: string): void {
+    this.message.set(text);
+    setTimeout(() => this.message.set(''), 4000); // auto‑dismiss after 4s
+  }
+
 
   submitBusinessDetails(): void {
     this.run(() =>
@@ -645,10 +804,10 @@ export class OnboardingComponent {
         .pipe(switchMap(() => this.refreshState()))
         .subscribe({
           next: () => {
-            this.message.set('Business details saved.');
+            this.showMessage('Business details saved.');
             this.step.set('kyc');
           },
-          error: (error) => this.showError(error),
+          error: (error) => this.showErrorMessage(error),
           complete: () => this.loading.set(false),
         })
     );
@@ -662,6 +821,15 @@ export class OnboardingComponent {
       return;
     }
 
+    const validationError = this.validateUpload(file);
+
+    if (validationError) {
+      input.value = '';
+      this.error.set(validationError);
+      this.message.set('');
+      return;
+    }
+
     this.run(() =>
       this.api.uploadKycDocument(this.selectedDocumentType, side, file).subscribe({
         next: (response) => {
@@ -669,9 +837,9 @@ export class OnboardingComponent {
             ...files.filter((item) => item.side !== side),
             { documentId: response.documentId, side: response.side, fileName: response.fileName },
           ]);
-          this.message.set(`${side} uploaded.`);
+          this.showMessage(`${side} uploaded.`);
         },
-        error: (error) => this.showError(error),
+        error: (error) => this.showErrorMessage(error),
         complete: () => this.loading.set(false),
       })
     );
@@ -687,10 +855,11 @@ export class OnboardingComponent {
         .pipe(switchMap(() => this.refreshState()))
         .subscribe({
           next: () => {
-            this.message.set('KYC submitted for review.');
+            this.showMessage('KYC submitted for review.');
             this.step.set('settlement');
+            this.refreshBankAccounts();
           },
-          error: (error) => this.showError(error),
+          error: (error) => this.showErrorMessage(error),
           complete: () => this.loading.set(false),
         })
     );
@@ -712,7 +881,7 @@ export class OnboardingComponent {
           ),
           switchMap(() =>
             forkJoin({
-              accounts: this.api.listBankAccounts(),
+              accounts: this.loadBankAccounts(),
               state: this.refreshState(),
             })
           )
@@ -721,10 +890,10 @@ export class OnboardingComponent {
           next: ({ accounts }) => {
             this.bankAccounts.set(accounts);
             this.selectedBankAccountId.set(accounts.find((item) => item.defaultAccount)?.id ?? null);
-            this.message.set('Settlement account linked.');
+            this.showMessage('Settlement account linked.');
             this.step.set('review');
           },
-          error: (error) => this.showError(error),
+          error: (error) => this.showErrorMessage(error),
           complete: () => this.loading.set(false),
         })
     );
@@ -737,7 +906,7 @@ export class OnboardingComponent {
         .pipe(
           switchMap(() =>
             forkJoin({
-              accounts: this.api.listBankAccounts(),
+              accounts: this.loadBankAccounts(),
               state: this.refreshState(),
             })
           )
@@ -746,30 +915,35 @@ export class OnboardingComponent {
           next: ({ accounts }) => {
             this.bankAccounts.set(accounts);
             this.selectedBankAccountId.set(account.id);
-            this.message.set('Default settlement account selected.');
+            this.showMessage('Default settlement account selected.');
           },
-          error: (error) => this.showError(error),
+          error: (error) => this.showErrorMessage(error),
           complete: () => this.loading.set(false),
         })
     );
   }
 
   submitOnboarding(): void {
+    if (this.password !== this.confirmPassword) {
+      this.showErrorMessage('Passwords do not match.');
+      return;
+    }
+
     this.run(() =>
       this.api
         .submitOnboarding({
           acceptTermsOfService: this.consents.terms,
           acceptPrivacyPolicy: this.consents.privacy,
           acceptNbeConsent: this.consents.nbe,
+          password: this.password,
+          confirmPassword: this.confirmPassword,
         })
         .subscribe({
           next: (response) => {
-            this.approvalMessage.set(
-              `${response.status}. ${response.nextActions?.join(' ') || 'You can now continue to sign in.'}`
-            );
+            this.approvalMessage.set(this.formatSubmitSuccessMessage(response));
             this.step.set('done');
           },
-          error: (error) => this.showError(error),
+          error: (error) => this.showErrorMessage(error),
           complete: () => this.loading.set(false),
         })
     );
@@ -786,11 +960,23 @@ export class OnboardingComponent {
   goTo(target: UiStep): void {
     if (this.canVisit(target)) {
       this.step.set(target);
+
+      if (target === 'settlement') {
+        this.refreshBankAccounts();
+      }
     }
   }
 
   allConsentsAccepted(): boolean {
     return this.consents.terms && this.consents.privacy && this.consents.nbe;
+  }
+
+  canSubmitReview(): boolean {
+    return (
+      this.allConsentsAccepted() &&
+      this.password.length >= 8 &&
+      this.password === this.confirmPassword
+    );
   }
 
   label(value: string): string {
@@ -799,6 +985,38 @@ export class OnboardingComponent {
       .split('_')
       .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
       .join(' ');
+  }
+
+  reviewLabel(value: string): string {
+    return this.label(value)
+      .replace(/\bKyc\b/g, 'KYC')
+      .replace(/\bNbe\b/g, 'NBE');
+  }
+
+  uploadLimitLabel(policy: UploadPolicyResponse): string {
+    return policy.maxFileSizeLabel || this.formatFileSize(policy.maxFileSizeBytes);
+  }
+
+  uploadTypeLabels(policy: UploadPolicyResponse): string[] {
+    return policy.allowedContentTypes.map((contentType) =>
+      contentType.replace('application/', '').replace('image/', '').toUpperCase()
+    );
+  }
+
+  private formatSubmitSuccessMessage(response: OnboardingSubmitResponse): string {
+    const actions = response.nextActions?.map((action) => this.label(action));
+
+    if (!actions?.length) {
+      return 'Onboarding complete. You can now sign in.';
+    }
+
+    if (actions.length === 1) {
+      return `Onboarding complete. ${actions[0]}.`;
+    }
+
+    const last = actions[actions.length - 1];
+    const rest = actions.slice(0, -1).join(', ');
+    return `Onboarding complete. ${rest}, and ${last}.`;
   }
 
   goToLogin(): void {
@@ -821,9 +1039,96 @@ export class OnboardingComponent {
     start();
   }
 
-  private showError(error: unknown): void {
-    const maybeHttpError = error as { error?: { message?: string }; message?: string };
-    this.error.set(maybeHttpError.error?.message ?? maybeHttpError.message ?? 'The onboarding request failed.');
+  private showErrorMessage(error: unknown): void {
+    this.loading.set(false);
+    const httpError = error as { error?: ApiError; message?: string };
+    const body = httpError.error;
+    let message = body?.message ?? httpError.message ?? 'The onboarding request failed.';
+
+    if (body?.details) {
+      const detailText = Object.entries(body.details)
+        .map(([key, value]) => `${key}: ${value}`)
+        .join('. ');
+      if (detailText) {
+        message = `${message} ${detailText}`;
+      }
+    }
+
+    this.error.set(message);
+
+    // ✅ Auto‑dismiss after 4 seconds
+    setTimeout(() => this.error.set(''), 4000);
+  }
+
+  private validateUpload(file: File): string | null {
+    const policy = this.uploadPolicy();
+
+    if (!policy) {
+      return null;
+    }
+
+    if (file.size > policy.maxFileSizeBytes) {
+      return `${file.name} is too large. Maximum upload size is ${this.uploadLimitLabel(policy)}.`;
+    }
+
+    if (!this.isAllowedContentType(file, policy.allowedContentTypes)) {
+      return `${file.name} is not an accepted file type. Accepted: ${this.uploadTypeLabels(policy).join(', ')}.`;
+    }
+
+    return null;
+  }
+
+  private isAllowedContentType(file: File, allowedContentTypes: string[]): boolean {
+    if (file.type && allowedContentTypes.includes(file.type)) {
+      return true;
+    }
+
+    return allowedContentTypes.some((contentType) =>
+      this.extensionsForContentType(contentType).some((extension) =>
+        file.name.toLowerCase().endsWith(extension)
+      )
+    );
+  }
+
+  private extensionsForContentType(contentType: string): string[] {
+    const extensions: Record<string, string[]> = {
+      'application/pdf': ['.pdf'],
+      'image/jpeg': ['.jpg', '.jpeg'],
+      'image/png': ['.png'],
+      'image/webp': ['.webp'],
+    };
+
+    return extensions[contentType] ?? [];
+  }
+
+  private formatFileSize(bytes: number): string {
+    if (bytes < 1024 * 1024) {
+      return `${Math.ceil(bytes / 1024)}KB`;
+    }
+
+    return `${Math.round(bytes / (1024 * 1024))}MB`;
+  }
+
+  disableLinkAccountButton = false;
+
+  private refreshBankAccounts(): void {
+    this.loadBankAccounts().subscribe({
+      next: (accounts) => {
+        this.bankAccounts.set(accounts);
+        this.disableLinkAccountButton = accounts.length >= 5;
+      },
+      error: (error) => this.showErrorMessage(error),
+      complete: () => this.loading.set(false),
+    });
+  }
+
+
+  private loadBankAccounts(): Observable<BankAccountResponse[]> {
+    return this.api.listBankAccounts().pipe(
+      catchError((error: HttpErrorResponse) =>
+        error.status === 403 ? of([]) : throwError(() => error)
+      )
+    );
   }
 
   private setDefaultDocumentType(requirements: KycDocumentRequirementResponse[]): void {
@@ -841,4 +1146,31 @@ export class OnboardingComponent {
       this.settlement.bankCode = defaultOption.code;
     }
   }
+
+  goToNextStep(): void {
+    const order: UiStep[] = ['phone', 'business', 'kyc', 'settlement', 'review', 'done'];
+    const currentIndex = order.indexOf(this.step());
+    if (currentIndex < order.length - 1) {
+      this.step.set(order[currentIndex + 1]);
+    }
+  }
+
+  goToPreviousStep(): void {
+    const order: UiStep[] = ['phone', 'business', 'kyc', 'settlement', 'review', 'done'];
+    const currentIndex = order.indexOf(this.step());
+    if (currentIndex > 0) {
+      this.step.set(order[currentIndex - 1]);
+    }
+  }
+
+  canGoNext(): boolean {
+    return this.step() !== 'done';
+  }
+
+  canGoPrevious(): boolean {
+    return this.step() !== 'phone';
+  }
+
+
+
 }

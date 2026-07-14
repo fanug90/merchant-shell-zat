@@ -1,5 +1,5 @@
 import { Injectable, signal } from '@angular/core';
-import { PhoneOtpVerificationResponse } from './onboarding.types';
+import { PhoneOtpVerificationResponse, normalizePhoneOtpVerificationResponse } from './onboarding.types';
 
 @Injectable({ providedIn: 'root' })
 export class OnboardingSessionService {
@@ -11,10 +11,14 @@ export class OnboardingSessionService {
   readonly phone = this.phoneSignal.asReadonly();
   readonly expiresAt = this.expiresAtSignal.asReadonly();
 
-  setVerification(phone: string, response: PhoneOtpVerificationResponse): void {
+  setVerification(
+    phone: string,
+    response: PhoneOtpVerificationResponse | Record<string, unknown>
+  ): void {
+    const normalized = normalizePhoneOtpVerificationResponse(response);
     this.phoneSignal.set(phone);
-    this.tokenSignal.set(response.accessToken);
-    this.expiresAtSignal.set(Date.now() + response.expiresInSeconds * 1000);
+    this.tokenSignal.set(normalized.accessToken);
+    this.expiresAtSignal.set(Date.now() + normalized.expiresInSeconds * 1000);
   }
 
   clear(): void {
