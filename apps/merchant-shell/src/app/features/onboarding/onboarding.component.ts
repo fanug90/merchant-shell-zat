@@ -8,9 +8,11 @@ import {
   signal,
   viewChildren,
 } from '@angular/core';
+
 import { FormsModule } from '@angular/forms';
 import { NgTemplateOutlet } from '@angular/common';
 import {
+  ApiError,
   BankAccountResponse,
   BusinessType,
   DocumentSide,
@@ -23,9 +25,12 @@ import {
   OnboardingSessionService,
   OnboardingStateResponse,
   OnboardingStep,
-  SettlementOptionResponse,
+  // OnboardingSubmitResponse,
+  // SettlementOptionResponse,
   SideUploadStatus,
   UploadPolicy,
+  OnboardingSubmitResponse,
+  SettlementOptionResponse,
 } from '@zat-main-web/core-api';
 import {
   EsButtonComponent,
@@ -34,9 +39,19 @@ import {
   EsSpinnerComponent,
   EsStatusBadgeComponent,
 } from '@zat-main-web/shared-ui';
-import { finalize, forkJoin, map, of, switchMap } from 'rxjs';
+import {
+  catchError,
+  finalize,
+  forkJoin,
+  map,
+  Observable,
+  of,
+  switchMap,
+  throwError,
+} from 'rxjs';
 import { Router } from '@angular/router';
 import { AuthService } from '@zat-main-web/auth';
+import { HttpErrorResponse } from '@angular/common/http';
 
 type UiStep = 'phone' | 'business' | 'kyc' | 'settlement' | 'review' | 'done';
 
@@ -86,13 +101,21 @@ type GroupSelection = Record<string, DocumentType>;
         }
       </section>
 
-      @if (message()) {
-        <p class="message" role="status">{{ message() }}</p>
-      }
+      <div class="popup-container">
+        @if (message()) {
+          <div class="message" role="status">
+            <button class="close" (click)="message.set('')">×</button>
+            <span>{{ message() }}</span>
+          </div>
+        }
 
-      @if (error()) {
-        <p class="error" role="alert">{{ error() }}</p>
-      }
+        @if (error()) {
+          <div class="error" role="alert">
+            <button class="close" (click)="error.set('')">×</button>
+            <span>{{ error() }}</span>
+          </div>
+        }
+      </div>
 
       @if (loading()) {
         <div class="loading"><es-spinner label="Working..." /></div>
@@ -675,9 +698,13 @@ type GroupSelection = Record<string, DocumentType>;
                 />
                 Make this my default settlement account
               </label>
-              <es-button type="submit" [disabled]="loading()"
-                >Link account</es-button
+
+              <es-button
+                type="submit"
+                [disabled]="loading() || disableLinkAccountButton"
               >
+                Link account
+              </es-button>
             </form>
 
             @if (bankAccounts().length) {
@@ -698,6 +725,25 @@ type GroupSelection = Record<string, DocumentType>;
                 }
               </div>
             }
+
+            <div class="navigation">
+              <button
+                type="button"
+                class="previous"
+                (click)="goToPreviousStep()"
+                [disabled]="!canGoPrevious()"
+              >
+                Previous
+              </button>
+              <button
+                type="button"
+                class="next"
+                (click)="goToNextStep()"
+                [disabled]="!canGoNext()"
+              >
+                Next
+              </button>
+            </div>
           </es-card>
         }
 
@@ -708,20 +754,22 @@ type GroupSelection = Record<string, DocumentType>;
           >
             @if (state(); as onboardingState) {
               <div class="review">
-                <div>
+                <div class="review-card">
                   <span>Merchant</span
                   ><strong>{{
                     onboardingState.review?.merchant?.businessName ||
                       'Not captured'
                   }}</strong>
                 </div>
-                <div>
+                <div class="review-card">
                   <span>KYC</span
                   ><strong>{{
-                    onboardingState.review?.kyc?.status || 'Not submitted'
+                    reviewLabel(
+                      onboardingState.review?.kyc?.status || 'Not submitted'
+                    )
                   }}</strong>
                 </div>
-                <div>
+                <div class="review-card">
                   <span>Settlement</span
                   ><strong>{{
                     onboardingState.review?.settlementAccount?.accountNumber ||
@@ -730,52 +778,17 @@ type GroupSelection = Record<string, DocumentType>;
                 </div>
               </div>
               @if (onboardingState.blockers?.length) {
-                <ul class="blockers">
-                  @for (blocker of onboardingState.blockers; track blocker) {
-                    <li>{{ blocker }}</li>
-                  }
-                </ul>
+                <section class="attention-panel" aria-label="Items to complete">
+                  <ul class="blockers">
+                    @for (blocker of onboardingState.blockers; track blocker) {
+                      <li class="blocker-item">{{ reviewLabel(blocker) }}</li>
+                    }
+                  </ul>
+                </section>
               }
             }
 
             <form class="form" (ngSubmit)="submitOnboarding()">
-              <div class="two">
-                <label for="reviewPassword">
-                  Create a password
-                  <input
-                    id="reviewPassword"
-                    name="reviewPassword"
-                    type="password"
-                    required
-                    minlength="8"
-                    autocomplete="new-password"
-                    aria-describedby="review-password-hint"
-                    [ngModel]="reviewPassword()"
-                    (ngModelChange)="onReviewPasswordChange($event)"
-                  />
-                  <span id="review-password-hint" class="field-hint"
-                    >At least 8 characters</span
-                  >
-                </label>
-                <label for="reviewConfirmPassword">
-                  Confirm password
-                  <input
-                    id="reviewConfirmPassword"
-                    name="reviewConfirmPassword"
-                    type="password"
-                    required
-                    autocomplete="new-password"
-                    [ngModel]="reviewConfirmPassword()"
-                    (ngModelChange)="onReviewConfirmPasswordChange($event)"
-                  />
-                  @if (reviewPasswordMismatch()) {
-                    <span class="field-error" role="alert"
-                      >Passwords don't match</span
-                    >
-                  }
-                </label>
-              </div>
-
               <label class="checkbox"
                 ><input
                   type="checkbox"
@@ -796,12 +809,47 @@ type GroupSelection = Record<string, DocumentType>;
                 ><input type="checkbox" name="nbe" [(ngModel)]="consents.nbe" />
                 Accept NBE consent</label
               >
+              <div class="two">
+                <label>
+                  Password
+                  <input
+                    type="password"
+                    name="password"
+                    required
+                    minlength="8"
+                    autocomplete="new-password"
+                    [(ngModel)]="password"
+                  />
+                </label>
+                <label>
+                  Confirm password
+                  <input
+                    type="password"
+                    name="confirmPassword"
+                    required
+                    minlength="8"
+                    autocomplete="new-password"
+                    [(ngModel)]="confirmPassword"
+                  />
+                </label>
+              </div>
               <es-button
                 type="submit"
-                [disabled]="loading() || !allConsentsAccepted()"
+                [disabled]="loading() || !canSubmitReview()"
                 >Submit onboarding</es-button
               >
             </form>
+
+            <div class="navigation">
+              <button
+                type="button"
+                class="previous"
+                (click)="goToPreviousStep()"
+                [disabled]="!canGoPrevious()"
+              >
+                Previous
+              </button>
+            </div>
           </es-card>
         }
 
@@ -811,7 +859,7 @@ type GroupSelection = Record<string, DocumentType>;
             title="Onboarding submitted"
             [description]="approvalMessage()"
             actionLabel="Go to Dashboard"
-            (action)="goToDashboard()"
+            (action)="goToLogin()"
           />
         }
       }
@@ -1032,20 +1080,93 @@ type GroupSelection = Record<string, DocumentType>;
         min-height: auto;
       }
 
+      .navigation {
+        display: flex;
+        justify-content: space-between;
+        margin-top: 1.5rem; /* pushes buttons down */
+      }
+
+      .navigation button {
+        border: none;
+        border-radius: var(--es-radius-sm);
+        padding: 0.75rem 1.5rem;
+        font-weight: 600;
+        cursor: pointer;
+      }
+
+      .navigation button.next {
+        background: var(--es-gradient-brand); /* identical to Link account */
+        color: white;
+      }
+
+      .navigation button.previous {
+        background: #e2e8f0; /* neutral gray */
+        color: #061a40;
+      }
+
       .message,
       .error {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
         border-radius: var(--es-radius-sm);
-        padding: 0.875rem 1rem;
+        padding: 1.5rem 1.5rem 1rem; /* extra top padding for space below X */
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        z-index: 1000;
+
+        display: flex;
+        flex-direction: column; /* ✅ stack text and button vertically */
+        align-items: center; /* ✅ center horizontally */
+        gap: 0.5rem; /* ✅ small space between text and button */
+        border: none; /* ✅ remove highlighted line */
+      }
+
+      close {
+        position: absolute; /* ✅ pinned in top corner */
+        top: -0.5rem;
+        right: 0.5rem;
+        background: none;
+        border: none;
+        font-size: 1.25rem;
+        font-weight: bold;
+        cursor: pointer;
+        color: inherit;
+      }
+
+      .message span,
+      .error span {
+        margin-bottom: 0.5rem; /* ✅ space between text and button */
+      }
+
+      .continue {
+        background: #0d9488; /* ✅ teal for success */
+      }
+
+      .retry {
+        background: #b91c1c; /* ✅ red for error */
+      }
+
+      .close {
+        position: absolute;
+        top: 0rem;
+        right: 0rem;
+        background: none;
+        border: none;
+        font-size: 1.25rem;
+        font-weight: bold;
+        cursor: pointer;
+        color: inherit;
       }
 
       .message {
-        background: #def7ec;
-        color: #03543f;
+        background: #def7ec; /* green success/info background */
+        color: #03543f; /* dark green text */
       }
 
       .error {
-        background: #fde8e8;
-        color: #9b1c1c;
+        background: #fde8e8; /* red error background */
+        color: #9b1c1c; /* dark red text */
       }
 
       .loading {
@@ -1690,6 +1811,12 @@ type GroupSelection = Record<string, DocumentType>;
         grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
         margin-top: 1rem;
       }
+      .accounts {
+        margin-top: 1rem; /* ✅ adds space above the accounts list */
+        display: grid;
+        gap: 0.75rem;
+        grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+      }
 
       .accounts button {
         background: white;
@@ -1726,6 +1853,13 @@ type GroupSelection = Record<string, DocumentType>;
         color: var(--es-color-neutral-600);
         display: block;
         font-size: 0.8125rem;
+      }
+      .blocker-item {
+        font-weight: 700;
+        color: #9b1c1c; /* red warning tone */
+        background: #fde8e8; /* light red background */
+        padding: 0.5rem 0.75rem;
+        border-radius: var(--es-radius-sm);
       }
 
       .blockers {
@@ -1814,6 +1948,7 @@ export class OnboardingComponent {
   readonly state = signal<OnboardingStateResponse | null>(null);
   readonly settlementOptions = signal<SettlementOptionResponse[]>([]);
   readonly bankAccounts = signal<BankAccountResponse[]>([]);
+  // readonly uploadedFiles = signal<UploadedKycFile[]>([]);
   readonly selectedBankAccountId = signal<string | null>(null);
   readonly approvalMessage = signal(
     'Your merchant onboarding request has been submitted.',
@@ -1825,7 +1960,6 @@ export class OnboardingComponent {
 
   /** What the user sees in the input, e.g. "1,300,000" */
   readonly estimatedMonthlyRevenueDisplay = signal('');
-
   readonly uploadPolicy = signal<UploadPolicy | null>(null);
 
   /** Which document type is selected per group code (for ONE_OF groups) */
@@ -2002,6 +2136,12 @@ export class OnboardingComponent {
   readonly kycGroups = computed<KycRequirementGroup[]>(
     () => this.state()?.kycRequirements ?? [],
   );
+  password = '';
+  confirmPassword = '';
+
+  // readonly enabledRequirements = computed(() =>
+  //   this.requirements().filter((requirement) => requirement.enabled)
+  // );
 
   /** The accept attribute value derived from the upload policy */
   readonly acceptAttr = computed<string>(() => {
@@ -2124,6 +2264,11 @@ export class OnboardingComponent {
     'DRIVERS_LICENSE',
     'TRADE_LICENSE',
   ]);
+  readonly uploadAccept = computed(() => {
+    const contentTypes = this.uploadPolicy()?.allowedContentTypes;
+
+    return contentTypes?.length ? contentTypes.join(',') : 'image/*,.pdf';
+  });
 
   requiresExpiryDate(option: KycDocumentOption): boolean {
     return this.expiryRequiredTypes.has(option.documentType);
@@ -2328,6 +2473,7 @@ export class OnboardingComponent {
           this.focusOtpBox(0);
         },
         error: (err: unknown) => this.showError(err),
+
         complete: () => this.loading.set(false),
       }),
     );
@@ -2359,12 +2505,12 @@ export class OnboardingComponent {
         .subscribe({
           next: ({ state, uploadPolicy, settlementOptions }) => {
             this.phoneVerified.set(true);
+
             this.state.set(state);
             this.uploadPolicy.set(uploadPolicy);
             this.initGroupSelections(state.kycRequirements ?? []);
             this.settlementOptions.set(settlementOptions);
             this.setDefaultSettlementOption(settlementOptions);
-
             // Populate  the business form if the DB already has data
             this.hydrateBusiness(state);
 
@@ -2391,6 +2537,11 @@ export class OnboardingComponent {
     );
   }
 
+  private showMessage(text: string): void {
+    this.message.set(text);
+    setTimeout(() => this.message.set(''), 4000); // auto‑dismiss after 4s
+  }
+
   submitBusinessDetails(): void {
     this.run(() =>
       this.api
@@ -2415,6 +2566,7 @@ export class OnboardingComponent {
             this.step.set('kyc');
           },
           error: (err: unknown) => this.showError(err),
+
           complete: () => this.loading.set(false),
         }),
     );
@@ -2517,8 +2669,8 @@ export class OnboardingComponent {
     }
     this.kycSubmitSuccess.set(false);
     // this.message.set('KYC submitted for review.');
-    // this.step.set('settlement');
-    this.router.navigate(['/home']);
+    this.step.set('settlement');
+    // this.router.navigate(['/home']);
   }
 
   linkSettlementAccount(): void {
@@ -2537,7 +2689,7 @@ export class OnboardingComponent {
           ),
           switchMap(() =>
             forkJoin({
-              accounts: this.api.listBankAccounts(),
+              accounts: this.loadBankAccounts(),
               state: this.refreshState(),
             }),
           ),
@@ -2552,6 +2704,7 @@ export class OnboardingComponent {
             this.step.set('review');
           },
           error: (err: unknown) => this.showError(err),
+
           complete: () => this.loading.set(false),
         }),
     );
@@ -2564,7 +2717,7 @@ export class OnboardingComponent {
         .pipe(
           switchMap(() =>
             forkJoin({
-              accounts: this.api.listBankAccounts(),
+              accounts: this.loadBankAccounts(),
               state: this.refreshState(),
             }),
           ),
@@ -2573,51 +2726,62 @@ export class OnboardingComponent {
           next: ({ accounts }) => {
             this.bankAccounts.set(accounts);
             this.selectedBankAccountId.set(account.id);
-            this.message.set('Default settlement account selected.');
+            this.showMessage('Default settlement account selected.');
           },
           error: (err: unknown) => this.showError(err),
+
           complete: () => this.loading.set(false),
         }),
     );
   }
 
   submitOnboarding(): void {
+    if (this.password !== this.confirmPassword) {
+      this.showErrorMessage('Passwords do not match.');
+      return;
+    }
+
     this.run(() =>
       this.api
         .submitOnboarding({
           acceptTermsOfService: this.consents.terms,
           acceptPrivacyPolicy: this.consents.privacy,
           acceptNbeConsent: this.consents.nbe,
-          password: this.reviewPassword(),
-          confirmPassword: this.reviewConfirmPassword(),
+
+          password: this.password,
+          confirmPassword: this.confirmPassword,
         })
         .subscribe({
           next: (response) => {
-            if (response.token?.accessToken) {
-              this.auth.setToken(response.token.accessToken);
-            }
-            this.approvalMessage.set(
-              `${response.status}. ${response.nextActions?.join(' ') || 'Your merchant workspace is ready.'}`,
-            );
+            this.approvalMessage.set(this.formatSubmitSuccessMessage(response));
             this.step.set('done');
           },
-          error: (err: unknown) => this.showError(err),
+          error: (error) => this.showErrorMessage(error),
           complete: () => this.loading.set(false),
         }),
     );
   }
 
   goTo(target: UiStep): void {
-    if (this.canVisit(target)) this.step.set(target);
+    if (this.canVisit(target)) {
+      this.step.set(target);
+
+      if (target === 'settlement') {
+        this.refreshBankAccounts();
+      }
+    }
   }
 
   allConsentsAccepted(): boolean {
     return this.consents.terms && this.consents.privacy && this.consents.nbe;
   }
 
-  //added ofr the sake of submitting the onboarding form
-  canSubmitOnboarding(): boolean {
-    return this.allConsentsAccepted() && this.reviewPasswordValid();
+  canSubmitReview(): boolean {
+    return (
+      this.allConsentsAccepted() &&
+      this.password.length >= 8 &&
+      this.password === this.confirmPassword
+    );
   }
 
   label(value: string): string {
@@ -2628,12 +2792,42 @@ export class OnboardingComponent {
       .join(' ');
   }
 
-  // goToLogin(): void {
-  //   window.location.assign('/login');
-  // }
-  goToDashboard(): void {
-    // window.location.assign('/home');
-    this.router.navigate(['/home'], { replaceUrl: true });
+  goToNextStep(): void {
+    const order: UiStep[] = [
+      'phone',
+      'business',
+      'kyc',
+      'settlement',
+      'review',
+      'done',
+    ];
+    const currentIndex = order.indexOf(this.step());
+    if (currentIndex < order.length - 1) {
+      this.step.set(order[currentIndex + 1]);
+    }
+  }
+
+  goToPreviousStep(): void {
+    const order: UiStep[] = [
+      'phone',
+      'business',
+      'kyc',
+      'settlement',
+      'review',
+      'done',
+    ];
+    const currentIndex = order.indexOf(this.step());
+    if (currentIndex > 0) {
+      this.step.set(order[currentIndex - 1]);
+    }
+  }
+
+  canGoNext(): boolean {
+    return this.step() !== 'done';
+  }
+
+  canGoPrevious(): boolean {
+    return this.step() !== 'phone';
   }
 
   // ── Private helpers ───────────────────────────────────────────────────────
@@ -2691,6 +2885,33 @@ export class OnboardingComponent {
         return null;
     }
   }
+  reviewLabel(value: string): string {
+    return this.label(value)
+      .replace(/\bKyc\b/g, 'KYC')
+      .replace(/\bNbe\b/g, 'NBE');
+  }
+
+  private formatSubmitSuccessMessage(
+    response: OnboardingSubmitResponse,
+  ): string {
+    const actions = response.nextActions?.map((action) => this.label(action));
+
+    if (!actions?.length) {
+      return 'Onboarding complete. You can now sign in.';
+    }
+
+    if (actions.length === 1) {
+      return `Onboarding complete. ${actions[0]}.`;
+    }
+
+    const last = actions[actions.length - 1];
+    const rest = actions.slice(0, -1).join(', ');
+    return `Onboarding complete. ${rest}, and ${last}.`;
+  }
+
+  goToLogin(): void {
+    window.location.assign('/login');
+  }
 
   private refreshState() {
     return this.api.getOnboardingState().pipe(
@@ -2719,6 +2940,50 @@ export class OnboardingComponent {
         'The request failed.',
     );
     this.loading.set(false);
+  }
+  private showErrorMessage(error: unknown): void {
+    this.loading.set(false);
+    const httpError = error as { error?: ApiError; message?: string };
+    const body = httpError.error;
+    let message =
+      body?.message ?? httpError.message ?? 'The onboarding request failed.';
+
+    if (body?.details) {
+      const detailText = Object.entries(body.details)
+        .map(([key, value]) => `${key}: ${value}`)
+        .join('. ');
+      if (detailText) {
+        message = `${message} ${detailText}`;
+      }
+    }
+
+    this.error.set(message);
+
+    // ✅ Auto‑dismiss after 4 seconds
+    setTimeout(() => this.error.set(''), 4000);
+  }
+
+  disableLinkAccountButton = false;
+
+  private refreshBankAccounts(): void {
+    this.loadBankAccounts().subscribe({
+      next: (accounts) => {
+        this.bankAccounts.set(accounts);
+        this.disableLinkAccountButton = accounts.length >= 5;
+      },
+      error: (error) => this.showErrorMessage(error),
+      complete: () => this.loading.set(false),
+    });
+  }
+
+  private loadBankAccounts(): Observable<BankAccountResponse[]> {
+    return this.api
+      .listBankAccounts()
+      .pipe(
+        catchError((error: HttpErrorResponse) =>
+          error.status === 403 ? of([]) : throwError(() => error),
+        ),
+      );
   }
 
   private clearStatusTimeout(key: string): void {
