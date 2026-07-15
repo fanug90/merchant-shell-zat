@@ -35,6 +35,8 @@ import {
   EsStatusBadgeComponent,
 } from '@zat-main-web/shared-ui';
 import { finalize, forkJoin, map, of, switchMap } from 'rxjs';
+import { Router } from '@angular/router';
+import { AuthService } from '@zat-main-web/auth';
 
 type UiStep = 'phone' | 'business' | 'kyc' | 'settlement' | 'review' | 'done';
 
@@ -737,6 +739,43 @@ type GroupSelection = Record<string, DocumentType>;
             }
 
             <form class="form" (ngSubmit)="submitOnboarding()">
+              <div class="two">
+                <label for="reviewPassword">
+                  Create a password
+                  <input
+                    id="reviewPassword"
+                    name="reviewPassword"
+                    type="password"
+                    required
+                    minlength="8"
+                    autocomplete="new-password"
+                    aria-describedby="review-password-hint"
+                    [ngModel]="reviewPassword()"
+                    (ngModelChange)="onReviewPasswordChange($event)"
+                  />
+                  <span id="review-password-hint" class="field-hint"
+                    >At least 8 characters</span
+                  >
+                </label>
+                <label for="reviewConfirmPassword">
+                  Confirm password
+                  <input
+                    id="reviewConfirmPassword"
+                    name="reviewConfirmPassword"
+                    type="password"
+                    required
+                    autocomplete="new-password"
+                    [ngModel]="reviewConfirmPassword()"
+                    (ngModelChange)="onReviewConfirmPasswordChange($event)"
+                  />
+                  @if (reviewPasswordMismatch()) {
+                    <span class="field-error" role="alert"
+                      >Passwords don't match</span
+                    >
+                  }
+                </label>
+              </div>
+
               <label class="checkbox"
                 ><input
                   type="checkbox"
@@ -771,8 +810,8 @@ type GroupSelection = Record<string, DocumentType>;
             icon="check_circle"
             title="Onboarding submitted"
             [description]="approvalMessage()"
-            actionLabel="Go to sign in"
-            (action)="goToLogin()"
+            actionLabel="Go to Dashboard"
+            (action)="goToDashboard()"
           />
         }
       }
@@ -1694,6 +1733,12 @@ type GroupSelection = Record<string, DocumentType>;
         padding-left: 1.25rem;
       }
 
+      .field-error {
+        color: #9b1c1c;
+        font-size: 0.75rem;
+        font-weight: 650;
+      }
+
       /* ── Accessibility ────────────────────────────── */
 
       .sr-only {
@@ -1736,6 +1781,8 @@ export class OnboardingComponent {
   private readonly api = inject(OnboardingApiService);
   private readonly session = inject(OnboardingSessionService);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly router = inject(Router);
+  private readonly auth = inject(AuthService);
   private readonly statusTimeouts = new Map<
     string,
     ReturnType<typeof setTimeout>
@@ -1904,6 +1951,29 @@ export class OnboardingComponent {
     }
     return `+251 ${digits.slice(0, 2)}•• •••${digits.slice(-2)}`;
   });
+
+  /** Password fields for final account creation  */
+  readonly reviewPassword = signal('');
+  readonly reviewConfirmPassword = signal('');
+
+  readonly reviewPasswordValid = computed(() => {
+    const pwd = this.reviewPassword();
+    const confirm = this.reviewConfirmPassword();
+    return pwd.length >= 8 && pwd === confirm;
+  });
+
+  readonly reviewPasswordMismatch = computed(() => {
+    const confirm = this.reviewConfirmPassword();
+    return confirm.length > 0 && this.reviewPassword() !== confirm;
+  });
+
+  onReviewPasswordChange(value: string): void {
+    this.reviewPassword.set(value);
+  }
+
+  onReviewConfirmPasswordChange(value: string): void {
+    this.reviewConfirmPassword.set(value);
+  }
 
   business = {
     businessName: '',
@@ -2447,7 +2517,8 @@ export class OnboardingComponent {
     }
     this.kycSubmitSuccess.set(false);
     // this.message.set('KYC submitted for review.');
-    this.step.set('settlement');
+    // this.step.set('settlement');
+    this.router.navigate(['/home']);
   }
 
   linkSettlementAccount(): void {
@@ -2517,11 +2588,16 @@ export class OnboardingComponent {
           acceptTermsOfService: this.consents.terms,
           acceptPrivacyPolicy: this.consents.privacy,
           acceptNbeConsent: this.consents.nbe,
+          password: this.reviewPassword(),
+          confirmPassword: this.reviewConfirmPassword(),
         })
         .subscribe({
           next: (response) => {
+            if (response.token?.accessToken) {
+              this.auth.setToken(response.token.accessToken);
+            }
             this.approvalMessage.set(
-              `${response.status}. ${response.nextActions?.join(' ') || 'You can now continue to sign in.'}`,
+              `${response.status}. ${response.nextActions?.join(' ') || 'Your merchant workspace is ready.'}`,
             );
             this.step.set('done');
           },
@@ -2539,6 +2615,11 @@ export class OnboardingComponent {
     return this.consents.terms && this.consents.privacy && this.consents.nbe;
   }
 
+  //added ofr the sake of submitting the onboarding form
+  canSubmitOnboarding(): boolean {
+    return this.allConsentsAccepted() && this.reviewPasswordValid();
+  }
+
   label(value: string): string {
     return value
       .toLowerCase()
@@ -2547,8 +2628,12 @@ export class OnboardingComponent {
       .join(' ');
   }
 
-  goToLogin(): void {
-    window.location.assign('/login');
+  // goToLogin(): void {
+  //   window.location.assign('/login');
+  // }
+  goToDashboard(): void {
+    // window.location.assign('/home');
+    this.router.navigate(['/home'], { replaceUrl: true });
   }
 
   // ── Private helpers ───────────────────────────────────────────────────────

@@ -193,6 +193,8 @@ export interface OnboardingSubmitRequest {
   acceptTermsOfService: boolean;
   acceptPrivacyPolicy: boolean;
   acceptNbeConsent: boolean;
+  password: string;
+  confirmPassword: string;
 }
 
 export interface OnboardingSubmitResponse {
@@ -201,6 +203,12 @@ export interface OnboardingSubmitResponse {
   currentStep: OnboardingStep;
   approvedAt?: string;
   nextActions?: string[];
+  token?: {
+    accessToken: string;
+    refreshToken?: string;
+    tokenType: string;
+    expiresInSeconds: number;
+  };
 }
 
 // export interface UploadedKycFile {
@@ -291,4 +299,29 @@ export interface KycSubmissionResponse {
   submittedAt?: string;
   createdAt?: string;
   documents?: KycDocumentRecord[];
+}
+
+// Additional types for the new setting flow
+
+export interface MerchantUpdateRequest {
+  businessName?: string;
+  businessNameAm?: string;
+  businessType?: BusinessType;
+  email?: string;
+  address?: AddressDto;
+  estimatedMonthlyRevenue?: number;
+  plan?: 'FREE' | 'PRO';
+}
+
+export interface PasswordChangeRequest {
+  currentPassword: string;
+  newPassword: string;
+  confirmPassword: string;
+}
+
+export interface AuthTokenResponse {
+  accessToken: string;
+  refreshToken?: string;
+  tokenType: string;
+  expiresInSeconds: number;
 }

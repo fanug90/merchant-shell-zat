@@ -7,7 +7,7 @@ import { ChangeDetectionStrategy, Component, input, output } from '@angular/core
     <section class="es-empty" role="status" aria-live="polite">
       <div class="es-empty__icon" aria-hidden="true">{{ icon() }}</div>
       <h2>{{ title() }}</h2>
-      @if (description()) {
+      @if (description()) { 
         <p>{{ description() }}</p>
       }
       @if (actionLabel()) {
