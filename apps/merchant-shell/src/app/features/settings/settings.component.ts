@@ -1,55 +1,4 @@
-// import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
-// import { EsCardComponent, EsPageHeaderComponent, EsStatusBadgeComponent } from '@zat-main-web/shared-ui';
-// import { TenantContextService } from '@zat-main-web/tenant-context';
-
-// @Component({
-//   selector: 'es-settings',
-//   standalone: true,
-//   imports: [EsCardComponent, EsPageHeaderComponent, EsStatusBadgeComponent],
-//   template: `
-//     <es-page-header title="Settings" subtitle="Merchant profile and basic configuration." />
-//     <es-card title="Merchant profile">
-//       <dl>
-//         <div><dt>Business</dt><dd>{{ tenant.currentMerchant().businessName }}</dd></div>
-//         <div><dt>Merchant ID</dt><dd>{{ tenant.currentMerchant().id }}</dd></div>
-//         <div><dt>Currency</dt><dd>{{ tenant.currentMerchant().currency }}</dd></div>
-//         <div><dt>KYC</dt><dd><es-status-badge [label]="tenant.currentMerchant().kycStatus" tone="success" /></dd></div>
-//       </dl>
-//     </es-card>
-//   `,
-//   styles: [
-//     `
-//       dl {
-//         display: grid;
-//         gap: 1rem;
-//         grid-template-columns: repeat(2, minmax(0, 1fr));
-//         margin: 0;
-//       }
-
-//       dt {
-//         color: var(--es-color-neutral-600);
-//         font-size: 0.8125rem;
-//         font-weight: 800;
-//       }
-
-//       dd {
-//         color: var(--es-color-neutral-900);
-//         font-weight: 650;
-//         margin: 0.25rem 0 0;
-//       }
-
-//       @media (max-width: 640px) {
-//         dl {
-//           grid-template-columns: 1fr;
-//         }
-//       }
-//     `,
-//   ],
-//   changeDetection: ChangeDetectionStrategy.OnPush,
-// })
-// export class SettingsComponent {
-//   readonly tenant = inject(TenantContextService);
-// }
+import { NgTemplateOutlet } from '@angular/common';
 import {
   ChangeDetectionStrategy,
   Component,
@@ -97,6 +46,7 @@ type SettingsTab = 'business' | 'kyc' | 'settlement' | 'password';
     EsPageHeaderComponent,
     EsSpinnerComponent,
     EsStatusBadgeComponent,
+    NgTemplateOutlet,
   ],
   template: `
     <es-page-header
@@ -236,20 +186,41 @@ type SettingsTab = 'business' | 'kyc' | 'settlement' | 'password';
       @case ('kyc') {
         <es-card
           title="KYC documents"
-          subtitle="Upload or replace documents at any time. Resubmission is always allowed."
+          subtitle="Upload or replace documents at any time."
         >
           @if (kycSubmission(); as submission) {
             <div class="kyc-status">
-              <es-status-badge
-                [label]="submission.status || 'NOT_STARTED'"
-                [tone]="kycStatusTone(submission.status)"
-              />
+              <span
+                class="kyc-pill"
+                [class.kyc-pill--success]="
+                  kycStatusTone(submission.status) === 'success'
+                "
+                [class.kyc-pill--warning]="
+                  kycStatusTone(submission.status) === 'warning'
+                "
+                [class.kyc-pill--danger]="
+                  kycStatusTone(submission.status) === 'danger'
+                "
+                [class.kyc-pill--neutral]="
+                  kycStatusTone(submission.status) === 'neutral'
+                "
+              >
+                @if (kycStatusTone(submission.status) === 'success') {
+                  <span aria-hidden="true">✓</span>
+                }
+                {{ kycStatusLabel(submission.status) }}
+              </span>
               @if (submission.rejectionReason) {
                 <span class="kyc-status__reason">{{
                   submission.rejectionReason
                 }}</span>
               }
             </div>
+            @if (submission.status === 'SUBMITTED' && merchantPlan()) {
+              <p class="kyc-status__plan">
+                Current plan: <strong>{{ merchantPlan() }}</strong>
+              </p>
+            }
           }
 
           @if (uploadPolicy(); as policy) {
@@ -259,33 +230,31 @@ type SettingsTab = 'business' | 'kyc' | 'settlement' | 'password';
             </p>
           }
 
-          <div class="kyc-groups">
-            @for (
-              requirement of kycRequirements();
-              track requirement.documentType
-            ) {
-              <section class="kyc-group">
-                <div class="kyc-group__header">
-                  <div>
-                    <h3>{{ requirement.displayName }}</h3>
-                  </div>
-                  @if (isRequirementComplete(requirement)) {
-                    <es-status-badge label="Complete" tone="success" />
-                  } @else if (uploadedSidesCount(requirement) > 0) {
-                    <es-status-badge
-                      [label]="
-                        uploadedSidesCount(requirement) +
-                        '/' +
-                        requirement.requiredSides.length +
-                        ' sides'
-                      "
-                      tone="warning"
-                    />
-                  } @else {
-                    <es-status-badge label="Not uploaded" tone="neutral" />
+          <!-- Identity document — single dropdown, one active side-upload set -->
+          <section class="kyc-group kyc-group--identity">
+            <div class="kyc-group__panel">
+              <label for="identity-select" class="doc-select-label">
+                Identity document
+                <select
+                  id="identity-select"
+                  [ngModel]="identitySelection()"
+                  (ngModelChange)="selectIdentityDocumentType($event)"
+                >
+                  @for (
+                    requirement of identityRequirements();
+                    track requirement.documentType
+                  ) {
+                    <option [value]="requirement.documentType">
+                      {{ requirement.displayName }}
+                      @if (isRequirementComplete(requirement)) {
+                        ✓
+                      }
+                    </option>
                   }
-                </div>
+                </select>
+              </label>
 
+              @if (activeIdentityRequirement(); as requirement) {
                 @if (requiresExpiryDate(requirement)) {
                   @if (expiryDateFor(requirement.documentType); as expiryDate) {
                     <p class="expiry-info">
@@ -303,96 +272,77 @@ type SettingsTab = 'business' | 'kyc' | 'settlement' | 'password';
                     <p class="expiry-info__pending">Extracting expiry date…</p>
                   }
                 }
+                <ng-container
+                  *ngTemplateOutlet="sideUploadsPanel; context: { requirement }"
+                />
+              }
+            </div>
+          </section>
 
-                <div class="side-uploads">
-                  @for (side of requirement.requiredSides; track side) {
-                    <div
-                      class="side-upload"
-                      [class.side-upload--done]="
-                        isSideUploaded(requirement.documentType, side)
+          <!-- Business license — accordion, one row per required type -->
+          <div class="kyc-groups">
+            @for (
+              requirement of businessLicenseRequirements();
+              track requirement.documentType
+            ) {
+              <section class="kyc-group">
+                <button
+                  type="button"
+                  class="kyc-group__toggle"
+                  [attr.aria-expanded]="
+                    isDocumentExpanded(requirement.documentType)
+                  "
+                  (click)="toggleDocument(requirement.documentType)"
+                >
+                  <div class="kyc-group__toggle-info">
+                    <h3>{{ requirement.displayName }}</h3>
+                    @if (
+                      requiresExpiryDate(requirement) &&
+                        expiryDateFor(requirement.documentType);
+                      as expiryDate
+                    ) {
+                      <span class="kyc-group__toggle-meta"
+                        >Expires {{ formatExpiryDate(expiryDate) }}</span
+                      >
+                    }
+                  </div>
+                  <div class="kyc-group__toggle-status">
+                    @if (isRequirementComplete(requirement)) {
+                      <es-status-badge label="Complete" tone="success" />
+                    } @else if (uploadedSidesCount(requirement) > 0) {
+                      <es-status-badge
+                        [label]="
+                          uploadedSidesCount(requirement) +
+                          '/' +
+                          requirement.requiredSides.length +
+                          ' sides'
+                        "
+                        tone="warning"
+                      />
+                    } @else {
+                      <es-status-badge label="Not uploaded" tone="neutral" />
+                    }
+                    <span
+                      class="kyc-group__chevron"
+                      [class.kyc-group__chevron--open]="
+                        isDocumentExpanded(requirement.documentType)
                       "
-                      [class.side-upload--uploading]="
-                        isUploading(requirement.documentType, side)
-                      "
+                      aria-hidden="true"
+                      >›</span
                     >
-                      <div class="side-upload__meta">
-                        <span class="side-label">{{ side }}</span>
-                        @if (isSideUploaded(requirement.documentType, side)) {
-                          <span class="side-done" aria-label="Uploaded">✓</span>
-                        }
-                      </div>
-                      <div class="side-upload__actions">
-                        @if (isSideUploaded(requirement.documentType, side)) {
-                          <button
-                            type="button"
-                            class="view-button"
-                            [disabled]="
-                              isUploading(requirement.documentType, side)
-                            "
-                            (click)="
-                              openPreview(requirement.documentType, side)
-                            "
-                          >
-                            View
-                          </button>
-                        }
-                        <label
-                          [for]="
-                            's-file-' + requirement.documentType + '-' + side
-                          "
-                          class="file-label"
-                          [class.file-label--disabled]="
-                            isUploading(requirement.documentType, side)
-                          "
-                        >
-                          <span>
-                            @if (isUploading(requirement.documentType, side)) {
-                              <span
-                                class="file-label__spinner"
-                                aria-hidden="true"
-                              ></span>
-                              Uploading…
-                            } @else {
-                              {{
-                                isSideUploaded(requirement.documentType, side)
-                                  ? 'Replace file'
-                                  : 'Choose file'
-                              }}
-                            }
-                          </span>
-                          <input
-                            [id]="
-                              's-file-' + requirement.documentType + '-' + side
-                            "
-                            type="file"
-                            [accept]="acceptAttr()"
-                            [disabled]="
-                              isUploading(requirement.documentType, side)
-                            "
-                            (change)="onFileChange(requirement, side, $event)"
-                          />
-                        </label>
-                      </div>
-                      @if (
-                        sideStatusFor(requirement.documentType, side);
-                        as status
-                      ) {
-                        <p
-                          class="side-upload__status"
-                          [class.side-upload__status--error]="
-                            status.type === 'error'
-                          "
-                          [class.side-upload__status--success]="
-                            status.type === 'success'
-                          "
-                          role="status"
-                        >
-                          {{ status.message }}
-                        </p>
-                      }
-                    </div>
-                  }
-                </div>
+                  </div>
+                </button>
+
+                @if (isDocumentExpanded(requirement.documentType)) {
+                  <div class="kyc-group__panel">
+                    <ng-container
+                      *ngTemplateOutlet="
+                        sideUploadsPanel;
+                        context: { requirement }
+                      "
+                    />
+                  </div>
+                }
               </section>
             }
           </div>
@@ -410,6 +360,83 @@ type SettingsTab = 'business' | 'kyc' | 'settlement' | 'password';
             >
           </div>
         </es-card>
+
+        <ng-template #sideUploadsPanel let-requirement="requirement">
+          <div class="side-uploads">
+            @for (side of requirement.requiredSides; track side) {
+              <div
+                class="side-upload"
+                [class.side-upload--done]="
+                  isSideUploaded(requirement.documentType, side)
+                "
+                [class.side-upload--uploading]="
+                  isUploading(requirement.documentType, side)
+                "
+              >
+                <div class="side-upload__meta">
+                  <span class="side-label">{{ side }}</span>
+                  @if (isSideUploaded(requirement.documentType, side)) {
+                    <span class="side-done" aria-label="Uploaded">✓</span>
+                  }
+                </div>
+                <div class="side-upload__actions">
+                  @if (isSideUploaded(requirement.documentType, side)) {
+                    <button
+                      type="button"
+                      class="view-button"
+                      [disabled]="isUploading(requirement.documentType, side)"
+                      (click)="openPreview(requirement.documentType, side)"
+                    >
+                      View
+                    </button>
+                  }
+                  <label
+                    [for]="'s-file-' + requirement.documentType + '-' + side"
+                    class="file-label"
+                    [class.file-label--disabled]="
+                      isUploading(requirement.documentType, side)
+                    "
+                  >
+                    <span>
+                      @if (isUploading(requirement.documentType, side)) {
+                        <span
+                          class="file-label__spinner"
+                          aria-hidden="true"
+                        ></span>
+                        Uploading…
+                      } @else {
+                        {{
+                          isSideUploaded(requirement.documentType, side)
+                            ? 'Replace file'
+                            : 'Choose file'
+                        }}
+                      }
+                    </span>
+                    <input
+                      [id]="'s-file-' + requirement.documentType + '-' + side"
+                      type="file"
+                      [accept]="acceptAttr()"
+                      [disabled]="isUploading(requirement.documentType, side)"
+                      (change)="onFileChange(requirement, side, $event)"
+                    />
+                  </label>
+                </div>
+                @if (sideStatusFor(requirement.documentType, side); as status) {
+                  <p
+                    class="side-upload__status"
+                    [class.side-upload__status--error]="status.type === 'error'"
+                    [class.side-upload__status--success]="
+                      status.type === 'success'
+                    "
+                    role="status"
+                  >
+                    {{ status.message }}
+                  </p>
+                }
+              </div>
+            }
+          </div>
+        </ng-template>
       }
 
       @case ('settlement') {
@@ -678,6 +705,18 @@ type SettingsTab = 'business' | 'kyc' | 'settlement' | 'password';
         font-weight: 650;
       }
 
+      .kyc-status__check {
+        color: var(--es-color-accent-dark);
+        font-size: 1.125rem;
+        font-weight: 800;
+      }
+
+      .kyc-status__plan {
+        color: var(--es-color-neutral-600);
+        font-size: 0.8125rem;
+        margin: 0 0 1rem;
+      }
+
       .upload-hint--top {
         background: var(--es-color-neutral-100);
         border-radius: var(--es-radius-sm);
@@ -685,6 +724,55 @@ type SettingsTab = 'business' | 'kyc' | 'settlement' | 'password';
         font-size: 0.8125rem;
         margin: 0 0 1.25rem;
         padding: 0.625rem 0.875rem;
+      }
+
+      .kyc-pill {
+        align-items: center;
+        border-radius: 999px;
+        display: inline-flex;
+        font-size: 0.75rem;
+        font-weight: 700;
+        gap: 0.25rem;
+        padding: 0.375rem 0.625rem;
+      }
+      .kyc-pill--success {
+        background: #def7ec;
+        color: #03543f;
+      }
+      .kyc-pill--warning {
+        background: #feecdc;
+        color: #8a2c0d;
+      }
+      .kyc-pill--danger {
+        background: #fde8e8;
+        color: #9b1c1c;
+      }
+      .kyc-pill--neutral {
+        background: var(--es-color-neutral-100);
+        color: var(--es-color-neutral-700);
+      }
+
+      .kyc-group--identity {
+        padding: 0;
+      }
+      .kyc-group--identity .kyc-group__panel {
+        border-top: 0;
+        padding: 1.25rem;
+      }
+      .doc-select-label {
+        color: var(--es-color-neutral-700);
+        display: grid;
+        font-size: 0.875rem;
+        font-weight: 650;
+        gap: 0.375rem;
+        margin: 0 0 1rem;
+      }
+      .doc-select-label select {
+        background: white;
+        border: 1px solid #cbd8e7;
+        border-radius: var(--es-radius-sm);
+        min-height: 2.75rem;
+        padding: 0 0.75rem;
       }
 
       .kyc-groups {
@@ -706,6 +794,55 @@ type SettingsTab = 'business' | 'kyc' | 'settlement' | 'password';
         color: var(--es-color-neutral-900);
         font-size: 1rem;
         margin: 0;
+      }
+      .kyc-group {
+        padding: 0;
+        overflow: hidden;
+      }
+
+      .kyc-group__toggle {
+        align-items: center;
+        background: white;
+        border: 0;
+        cursor: pointer;
+        display: flex;
+        justify-content: space-between;
+        padding: 1.25rem;
+        text-align: left;
+        width: 100%;
+      }
+
+      .kyc-group__toggle-info h3 {
+        color: var(--es-color-neutral-900);
+        font-size: 1rem;
+        margin: 0;
+      }
+
+      .kyc-group__toggle-meta {
+        color: var(--es-color-neutral-600);
+        font-size: 0.8125rem;
+      }
+
+      .kyc-group__toggle-status {
+        align-items: center;
+        display: flex;
+        gap: 0.75rem;
+      }
+
+      .kyc-group__chevron {
+        color: var(--es-color-neutral-600);
+        font-size: 1.25rem;
+        transform: rotate(90deg);
+        transition: transform 150ms ease;
+      }
+
+      .kyc-group__chevron--open {
+        transform: rotate(-90deg);
+      }
+
+      .kyc-group__panel {
+        border-top: 1px solid var(--es-color-border);
+        padding: 1.25rem;
       }
 
       .expiry-info {
@@ -1003,6 +1140,46 @@ export class SettingsComponent {
   readonly sideStatus = signal<Record<string, SideUploadStatus>>({});
   readonly kycSubmitError = signal('');
   readonly previewFile = signal<KycDocumentFile | null>(null);
+  readonly merchantPlan = signal<string | null>(null);
+  readonly expandedDocumentType = signal<DocumentType | null>(null);
+
+  private readonly identityDocumentTypes: DocumentType[] = [
+    'KEBELE_ID',
+    'PASSPORT',
+    'DRIVERS_LICENSE',
+  ];
+  private readonly businessLicenseDocumentTypes: DocumentType[] = [
+    'TRADE_LICENSE',
+  ];
+  /** Sides uploaded this editing session, per document type — used to require every required
+   *  side be freshly re-uploaded once any one side of that document is touched. */
+  readonly touchedSidesThisSession = signal<
+    Map<DocumentType, Set<DocumentSide>>
+  >(new Map());
+
+  readonly identityRequirements = computed(() =>
+    this.kycRequirements().filter((r) =>
+      this.identityDocumentTypes.includes(r.documentType),
+    ),
+  );
+  readonly businessLicenseRequirements = computed(() =>
+    this.kycRequirements().filter((r) =>
+      this.businessLicenseDocumentTypes.includes(r.documentType),
+    ),
+  );
+
+  readonly identitySelection = signal<DocumentType | null>(null);
+
+  readonly activeIdentityRequirement = computed(
+    () =>
+      this.identityRequirements().find(
+        (r) => r.documentType === this.identitySelection(),
+      ) ?? null,
+  );
+
+  selectIdentityDocumentType(documentType: DocumentType): void {
+    this.identitySelection.set(documentType);
+  }
 
   readonly kycDocuments = computed<KycDocumentRecord[]>(
     () => this.kycSubmission()?.documents ?? [],
@@ -1015,11 +1192,17 @@ export class SettingsComponent {
       : 'application/pdf,image/jpeg,image/png,image/webp';
   });
   readonly canSubmitKyc = computed(() => {
-    const requirements = this.kycRequirements();
-    return (
-      requirements.length > 0 &&
-      requirements.every((r) => this.isRequirementComplete(r)) &&
-      !this.anyUploadInProgress()
+    if (this.anyUploadInProgress()) return false;
+
+    const identityRequirement = this.activeIdentityRequirement();
+    if (
+      !identityRequirement ||
+      !this.isDocumentReadyForResubmit(identityRequirement)
+    )
+      return false;
+
+    return this.businessLicenseRequirements().every((r) =>
+      this.isDocumentReadyForResubmit(r),
     );
   });
 
@@ -1031,6 +1214,31 @@ export class SettingsComponent {
     side: DocumentSide,
   ): KycDocumentFile | undefined {
     return this.recordFor(documentType)?.files.find((f) => f.side === side);
+  }
+
+  private markSideTouched(
+    documentType: DocumentType,
+    side: DocumentSide,
+  ): void {
+    this.touchedSidesThisSession.update((map) => {
+      const next = new Map(map);
+      const sides = new Set(next.get(documentType) ?? []);
+      sides.add(side);
+      next.set(documentType, sides);
+      return next;
+    });
+  }
+
+  isDocumentReadyForResubmit(
+    requirement: KycDocumentRequirementResponse,
+  ): boolean {
+    const touched = this.touchedSidesThisSession().get(
+      requirement.documentType,
+    );
+    if (!touched || touched.size === 0) {
+      return this.isRequirementComplete(requirement); // untouched: trust server's existing state
+    }
+    return requirement.requiredSides.every((side) => touched.has(side)); // touched: demand a full fresh set
   }
   isSideUploaded(documentType: DocumentType, side: DocumentSide): boolean {
     return !!this.fileRecordFor(documentType, side);
@@ -1062,16 +1270,33 @@ export class SettingsComponent {
         });
   }
   kycStatusTone(status?: string): 'success' | 'warning' | 'danger' | 'neutral' {
-    if (status === 'APPROVED') return 'success';
-    if (status === 'REJECTED' || status === 'REQUIRES_RESUBMISSION')
+    const normalized = (status ?? '').toUpperCase();
+    if (normalized === 'APPROVED' || normalized === 'SUBMITTED')
+      return 'success';
+    if (normalized === 'REJECTED' || normalized === 'REQUIRES_RESUBMISSION')
       return 'danger';
-    if (status === 'SUBMITTED' || status === 'IN_PROGRESS') return 'warning';
+    if (normalized === 'IN_PROGRESS') return 'warning';
     return 'neutral';
   }
   allowedFormatsLabel(policy: UploadPolicy): string {
     return policy.allowedContentTypes
       .map((mime) => mime.split('/')[1]?.toUpperCase() ?? mime)
       .join(', ');
+  }
+  kycStatusLabel(status?: string): string {
+    if ((status ?? '').toUpperCase() === 'SUBMITTED')
+      return 'Submitted for review';
+    return status || 'NOT_STARTED';
+  }
+
+  toggleDocument(documentType: DocumentType): void {
+    this.expandedDocumentType.update((current) =>
+      current === documentType ? null : documentType,
+    );
+  }
+
+  isDocumentExpanded(documentType: DocumentType): boolean {
+    return this.expandedDocumentType() === documentType;
   }
 
   private keyFor(documentType: DocumentType, side: DocumentSide): string {
@@ -1151,6 +1376,8 @@ export class SettingsComponent {
       .subscribe({
         next: (submission) => {
           this.kycSubmission.set(submission);
+          this.markSideTouched(requirement.documentType, side);
+
           this.setSideStatus(
             key,
             'success',
@@ -1163,7 +1390,24 @@ export class SettingsComponent {
   }
 
   submitKyc(): void {
-    const documentIds = [...new Set(this.kycDocuments().map((d) => d.id))];
+    // const documentIds = [...new Set(this.kycDocuments().map((d) => d.id))];
+    // if (documentIds.length === 0) {
+    //   this.kycSubmitError.set('No documents found to submit.');
+    //   return;
+    // }
+    const identityType = this.identitySelection();
+    const relevantTypes = new Set<DocumentType>([
+      ...(identityType ? [identityType] : []),
+      ...this.businessLicenseDocumentTypes,
+    ]);
+    const documentIds = [
+      ...new Set(
+        this.kycDocuments()
+          .filter((d) => relevantTypes.has(d.documentType))
+          .map((d) => d.id),
+      ),
+    ];
+
     if (documentIds.length === 0) {
       this.kycSubmitError.set('No documents found to submit.');
       return;
@@ -1323,9 +1567,8 @@ export class SettingsComponent {
         kycRequirements: this.api.listKycRequirements(),
         kycSubmission: this.api.getKycStatus(),
         uploadPolicy: this.api.getUploadPolicy(),
-        settlementOptions: this.api
-          .listBankAccounts()
-          .pipe(switchMap((accounts) => of({ accounts }))),
+        settlementOptions: this.api.listSettlementOptions(),
+        bankAccounts: this.api.listBankAccounts(),
       }).subscribe({
         next: ({
           merchant,
@@ -1333,14 +1576,23 @@ export class SettingsComponent {
           kycSubmission,
           uploadPolicy,
           settlementOptions,
+          bankAccounts,
         }) => {
           this.hydrateBusiness(merchant);
           this.kycRequirements.set(kycRequirements);
           this.kycSubmission.set(kycSubmission);
           this.uploadPolicy.set(uploadPolicy);
-          this.bankAccounts.set(settlementOptions.accounts);
+          this.settlementOptions.set(settlementOptions);
+          this.bankAccounts.set(bankAccounts);
           this.selectedBankAccountId.set(
-            settlementOptions.accounts.find((a) => a.defaultAccount)?.id ??
+            bankAccounts.find((a) => a.defaultAccount)?.id ?? null,
+          );
+          const uploadedIdentityType = this.identityDocumentTypes.find((type) =>
+            kycSubmission.documents?.some((d) => d.documentType === type),
+          );
+          this.identitySelection.set(
+            uploadedIdentityType ??
+              this.identityRequirements()[0]?.documentType ??
               null,
           );
         },
@@ -1391,6 +1643,7 @@ export class SettingsComponent {
     this.revenueDisplay.set(
       amount !== null ? amount.toLocaleString('en-US') : '',
     );
+    this.merchantPlan.set(merchant.plan ?? null);
   }
 
   label(value: string): string {

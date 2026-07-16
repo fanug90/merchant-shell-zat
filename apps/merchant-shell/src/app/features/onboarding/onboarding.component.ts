@@ -101,7 +101,7 @@ type GroupSelection = Record<string, DocumentType>;
         }
       </section>
 
-      <div class="popup-container">
+      <!-- <div class="popup-container">
         @if (message()) {
           <div class="message" role="status">
             <button class="close" (click)="message.set('')">×</button>
@@ -115,7 +115,7 @@ type GroupSelection = Record<string, DocumentType>;
             <span>{{ error() }}</span>
           </div>
         }
-      </div>
+      </div> -->
 
       @if (loading()) {
         <div class="loading"><es-spinner label="Working..." /></div>
@@ -859,7 +859,7 @@ type GroupSelection = Record<string, DocumentType>;
             title="Onboarding submitted"
             [description]="approvalMessage()"
             actionLabel="Go to Dashboard"
-            (action)="goToLogin()"
+            (action)="goToDashboard()"
           />
         }
       }
@@ -2537,10 +2537,10 @@ export class OnboardingComponent {
     );
   }
 
-  private showMessage(text: string): void {
-    this.message.set(text);
-    setTimeout(() => this.message.set(''), 4000); // auto‑dismiss after 4s
-  }
+  // private showMessage(text: string): void {
+  //   this.message.set(text);
+  //   setTimeout(() => this.message.set(''), 4000); // auto‑dismiss after 4s
+  // }
 
   submitBusinessDetails(): void {
     this.run(() =>
@@ -2726,7 +2726,8 @@ export class OnboardingComponent {
           next: ({ accounts }) => {
             this.bankAccounts.set(accounts);
             this.selectedBankAccountId.set(account.id);
-            this.showMessage('Default settlement account selected.');
+            // this.showMessage('Default settlement account selected.');
+            this.message.set('Default settlement account selected.');
           },
           error: (err: unknown) => this.showError(err),
 
@@ -2753,7 +2754,12 @@ export class OnboardingComponent {
         })
         .subscribe({
           next: (response) => {
-            this.approvalMessage.set(this.formatSubmitSuccessMessage(response));
+            if (response.token?.accessToken) {
+              this.auth.setToken(response.token.accessToken);
+            }
+            this.approvalMessage.set(
+              `${response.status}. ${response.nextActions?.join(' ') || 'Your merchant workspace is ready.'}`,
+            );
             this.step.set('done');
           },
           error: (error) => this.showErrorMessage(error),
@@ -2891,26 +2897,26 @@ export class OnboardingComponent {
       .replace(/\bNbe\b/g, 'NBE');
   }
 
-  private formatSubmitSuccessMessage(
-    response: OnboardingSubmitResponse,
-  ): string {
-    const actions = response.nextActions?.map((action) => this.label(action));
+  // private formatSubmitSuccessMessage(
+  //   response: OnboardingSubmitResponse,
+  // ): string {
+  //   const actions = response.nextActions?.map((action) => this.label(action));
 
-    if (!actions?.length) {
-      return 'Onboarding complete. You can now sign in.';
-    }
+  //   if (!actions?.length) {
+  //     return 'Onboarding complete. You can now sign in.';
+  //   }
 
-    if (actions.length === 1) {
-      return `Onboarding complete. ${actions[0]}.`;
-    }
+  //   if (actions.length === 1) {
+  //     return `Onboarding complete. ${actions[0]}.`;
+  //   }
 
-    const last = actions[actions.length - 1];
-    const rest = actions.slice(0, -1).join(', ');
-    return `Onboarding complete. ${rest}, and ${last}.`;
-  }
+  //   const last = actions[actions.length - 1];
+  //   const rest = actions.slice(0, -1).join(', ');
+  //   return `Onboarding complete. ${rest}, and ${last}.`;
+  // }
 
-  goToLogin(): void {
-    window.location.assign('/login');
+  goToDashboard(): void {
+    this.router.navigate(['/home']);
   }
 
   private refreshState() {

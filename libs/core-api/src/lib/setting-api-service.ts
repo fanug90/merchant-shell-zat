@@ -15,6 +15,7 @@ import {
   MerchantResponse,
   MerchantUpdateRequest,
   PasswordChangeRequest,
+  SettlementOptionResponse,
   UploadPolicy,
 } from './onboarding.types';
 import { from, Observable, switchMap } from 'rxjs';
@@ -168,6 +169,15 @@ export class SettingApiService {
       this.http.put<BankAccountResponse>(
         this.url(`/v1/merchants/me/bank-accounts/${bankAccountId}`),
         request,
+        { headers },
+      ),
+    );
+  }
+
+  listSettlementOptions(): Observable<SettlementOptionResponse[]> {
+    return this.authorized((headers) =>
+      this.http.get<SettlementOptionResponse[]>(
+        this.url('/v1/onboarding/settlement-options'),
         { headers },
       ),
     );
