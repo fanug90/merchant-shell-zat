@@ -23,6 +23,7 @@ import {
   PhoneOtpVerificationResponse,
   SettlementOptionResponse,
   UploadPolicy,
+  normalizePhoneOtpVerificationResponse,
 } from './onboarding.types';
 
 @Injectable({ providedIn: 'root' })
@@ -42,9 +43,17 @@ export class OnboardingApiService {
   verifyPhoneOtp(
     request: PhoneOtpVerificationRequest,
   ): Observable<PhoneOtpVerificationResponse> {
-    return this.http.post<
-      PhoneOtpVerificationResponse & Record<string, unknown>
-    >(this.url('/v1/onboarding/phone/otp/verify'), request);
+    return this.http
+      .post<
+        PhoneOtpVerificationResponse & Record<string, unknown>
+      >(this.url('/v1/onboarding/phone/otp/verify'), request)
+      .pipe(
+        map((response) =>
+          normalizePhoneOtpVerificationResponse(
+            response as PhoneOtpVerificationResponse | Record<string, unknown>,
+          ),
+        ),
+      );
   }
 
   getOnboardingState(): Observable<OnboardingStateResponse> {

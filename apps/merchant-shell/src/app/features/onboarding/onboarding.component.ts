@@ -2738,7 +2738,7 @@ export class OnboardingComponent {
 
   submitOnboarding(): void {
     if (this.password !== this.confirmPassword) {
-      this.showErrorMessage('Passwords do not match.');
+      this.showError('Passwords do not match.');
       return;
     }
 
@@ -2762,7 +2762,7 @@ export class OnboardingComponent {
             );
             this.step.set('done');
           },
-          error: (error) => this.showErrorMessage(error),
+          error: (error) => this.showError(error),
           complete: () => this.loading.set(false),
         }),
     );
@@ -2941,33 +2941,42 @@ export class OnboardingComponent {
       message?: string;
     };
     this.error.set(
-      maybeHttpError.error?.message ??
-        maybeHttpError.message ??
-        'The request failed.',
+      typeof error === 'string'
+        ? error
+        : (maybeHttpError.error?.message ??
+            maybeHttpError.message ??
+            'The request failed.'),
     );
     this.loading.set(false);
   }
-  private showErrorMessage(error: unknown): void {
-    this.loading.set(false);
-    const httpError = error as { error?: ApiError; message?: string };
-    const body = httpError.error;
-    let message =
-      body?.message ?? httpError.message ?? 'The onboarding request failed.';
+  //show error message has the same function as showError
+  //that is why it is commented out
 
-    if (body?.details) {
-      const detailText = Object.entries(body.details)
-        .map(([key, value]) => `${key}: ${value}`)
-        .join('. ');
-      if (detailText) {
-        message = `${message} ${detailText}`;
-      }
-    }
+  // private showErrorMessage(error: unknown): void {
+  //   this.loading.set(false);
+  //   const httpError = error as { error?: ApiError; message?: string };
+  //   const body = httpError.error;
+  //   const message =
+  //     typeof error === 'string'
+  //       ? error
+  //       : (body?.message ??
+  //         httpError.message ??
+  //         'The onboarding request failed.');
 
-    this.error.set(message);
+  //   if (body?.details) {
+  //     const detailText = Object.entries(body.details)
+  //       .map(([key, value]) => `${key}: ${value}`)
+  //       .join('. ');
+  //     if (detailText) {
+  //       message = `${message} ${detailText}`;
+  //     }
+  //   }
 
-    // ✅ Auto‑dismiss after 4 seconds
-    setTimeout(() => this.error.set(''), 4000);
-  }
+  //   this.error.set(message);
+
+  //   // ✅ Auto‑dismiss after 4 seconds
+  //   setTimeout(() => this.error.set(''), 4000);
+  // }
 
   disableLinkAccountButton = false;
 
@@ -2977,7 +2986,7 @@ export class OnboardingComponent {
         this.bankAccounts.set(accounts);
         this.disableLinkAccountButton = accounts.length >= 5;
       },
-      error: (error) => this.showErrorMessage(error),
+      error: (error) => this.showError(error),
       complete: () => this.loading.set(false),
     });
   }
