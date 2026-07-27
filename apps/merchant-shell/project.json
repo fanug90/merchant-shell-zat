@@ -17,6 +17,11 @@
         "browser": "apps/merchant-shell/src/main.ts",
         "tsConfig": "apps/merchant-shell/tsconfig.app.json",
         "inlineStyleLanguage": "scss",
+        "stylePreprocessorOptions": {
+          "includePaths": [
+            "apps/merchant-shell/src/styles"
+          ]
+        },
         "assets": [
           {
             "glob": "**/*",

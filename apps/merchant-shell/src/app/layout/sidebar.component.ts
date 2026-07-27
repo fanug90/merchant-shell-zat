@@ -1,4 +1,10 @@
-import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  inject,
+  output,
+} from '@angular/core';
 import { RouterLink, RouterLinkActive } from '@angular/router';
 import { TenantContextService } from '@zat-main-web/tenant-context';
 
@@ -8,17 +14,32 @@ import { TenantContextService } from '@zat-main-web/tenant-context';
   imports: [RouterLink, RouterLinkActive],
   template: `
     <aside class="sidebar" aria-label="Workspace navigation">
-      <a class="brand" routerLink="/home">
-        <span>ES</span>
-        <strong>Platform</strong>
-      </a>
+      <div class="sidebar__head">
+        <a class="brand" routerLink="/home" (click)="linkActivated.emit()">
+          <span>ES</span>
+          <strong>Platform</strong>
+        </a>
+        <button
+          type="button"
+          class="sidebar__close"
+          (click)="closeRequested.emit()"
+          aria-label="Close navigation"
+        >
+          ✕
+        </button>
+      </div>
 
       <p class="sidebar__label">Merchant workspace</p>
 
       <nav>
         @for (item of navItems(); track item.route) {
-          <a [routerLink]="item.route" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: item.route === '/home' }">
-            <span aria-hidden="true">{{ item.icon }}</span>
+          <a
+            [routerLink]="item.route"
+            routerLinkActive="active"
+            [routerLinkActiveOptions]="{ exact: item.route === '/home' }"
+          >
+            <!-- <span aria-hidden="true">{{ item.icon }}</span> -->
+            <span class="material-symbols-outlined">{{ item.icon }}</span>
             <b>{{ item.label }}</b>
             @if (item.badge) {
               <em>{{ item.badge }}</em>
@@ -34,10 +55,18 @@ import { TenantContextService } from '@zat-main-web/tenant-context';
         background:
           linear-gradient(180deg, rgba(6, 26, 64, 0.98), rgba(6, 26, 64, 0.94)),
           var(--es-color-neutral-900);
-        border-right: 1px solid rgba(255, 255, 255, 0.08);
         color: white;
-        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+        height: 100%;
         padding: 1.25rem;
+      }
+
+      .sidebar__head {
+        align-items: center;
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 1.5rem;
       }
 
       .brand {
@@ -45,7 +74,6 @@ import { TenantContextService } from '@zat-main-web/tenant-context';
         color: white;
         display: inline-flex;
         gap: 0.625rem;
-        margin-bottom: 1.5rem;
         text-decoration: none;
       }
 
@@ -62,6 +90,24 @@ import { TenantContextService } from '@zat-main-web/tenant-context';
 
       .brand strong {
         font-size: 1.05rem;
+      }
+
+      .sidebar__close {
+        background: transparent;
+        border: 0;
+        border-radius: var(--es-radius-sm);
+        color: white;
+        cursor: pointer;
+        display: none;
+        font-size: 1.25rem;
+        height: 2.5rem;
+        line-height: 1;
+        width: 2.5rem;
+      }
+
+      .sidebar__close:hover,
+      .sidebar__close:focus-visible {
+        background: rgba(255, 255, 255, 0.11);
       }
 
       .sidebar__label {
@@ -83,11 +129,10 @@ import { TenantContextService } from '@zat-main-web/tenant-context';
         border: 1px solid transparent;
         border-radius: 10px;
         color: rgba(255, 255, 255, 0.78);
-        display: grid;
-        gap: 0.625rem;
-        grid-template-columns: 1.5rem minmax(0, 1fr) auto;
-        min-height: 2.5rem;
-        padding: 0 0.75rem;
+        display: flex;
+        gap: 0.875rem;
+        min-height: 2.75rem;
+        padding: 0 0.875rem;
         text-decoration: none;
       }
 
@@ -96,6 +141,10 @@ import { TenantContextService } from '@zat-main-web/tenant-context';
         background: rgba(255, 255, 255, 0.11);
         border-color: rgba(255, 255, 255, 0.08);
         color: white;
+      }
+      nav a .nav-icon {
+        flex-shrink: 0;
+        font-size: 1.25rem;
       }
 
       b {
@@ -113,18 +162,12 @@ import { TenantContextService } from '@zat-main-web/tenant-context';
         padding: 0.125rem 0.4rem;
       }
 
+      // Below the drawer breakpoint, show the close button (drawer mode).
       @media (max-width: 860px) {
-        .sidebar {
-          min-height: auto;
-        }
-
-        nav {
-          grid-auto-flow: column;
-          overflow-x: auto;
-        }
-
-        nav a {
-          min-width: max-content;
+        .sidebar__close {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
         }
       }
     `,
@@ -134,4 +177,7 @@ import { TenantContextService } from '@zat-main-web/tenant-context';
 export class SidebarComponent {
   private readonly tenant = inject(TenantContextService);
   readonly navItems = computed(() => this.tenant.visibleNavigation());
+
+  readonly closeRequested = output<void>();
+  readonly linkActivated = output<void>();
 }

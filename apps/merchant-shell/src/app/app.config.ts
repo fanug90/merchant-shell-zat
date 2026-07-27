@@ -22,7 +22,11 @@ export const appConfig: ApplicationConfig = {
     provideBrowserGlobalErrorListeners(),
     provideRouter(appRoutes),
     provideHttpClient(
-      withInterceptors([correlationIdInterceptor, authTokenInterceptor, errorInterceptor])
+      withInterceptors([
+        correlationIdInterceptor,
+        authTokenInterceptor,
+        errorInterceptor,
+      ]),
     ),
     {
       provide: AUTH_CONFIG,
@@ -40,6 +44,7 @@ export const appConfig: ApplicationConfig = {
       useValue: {
         bffBaseUrl: environment.bffBaseUrl,
         merchantServiceBaseUrl: environment.merchantServiceBaseUrl,
+        paymentServiceBaseUrl: environment.paymentServiceBaseUrl,
         coreApiVersion: environment.coreApiVersion,
         useMockWorkspace: environment.useMockWorkspace,
       },

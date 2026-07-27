@@ -3,12 +3,17 @@ import { inject } from '@angular/core';
 import { Router } from '@angular/router';
 import { AuthService } from '@zat-main-web/auth';
 import { catchError, from, switchMap, throwError } from 'rxjs';
-import { CORE_API_CONFIG, DEFAULT_CORE_API_CONFIG } from './core-api.config';
+import {
+  CORE_API_CONFIG,
+  CoreApiConfig,
+  DEFAULT_CORE_API_CONFIG,
+} from './core-api.config';
 
 export const authTokenInterceptor: HttpInterceptorFn = (req, next) => {
   const auth = inject(AuthService);
-  const config = inject(CORE_API_CONFIG, { optional: true }) ?? DEFAULT_CORE_API_CONFIG;
-  const isBffRequest = isBffUrl(req.url, config.bffBaseUrl);
+  const config =
+    inject(CORE_API_CONFIG, { optional: true }) ?? DEFAULT_CORE_API_CONFIG;
+  const isBffRequest = isBffUrl(req.url, config);
 
   if (!isBffRequest) {
     return next(req);
@@ -19,9 +24,9 @@ export const authTokenInterceptor: HttpInterceptorFn = (req, next) => {
       next(
         req.clone({
           setHeaders: { Authorization: `Bearer ${token}` },
-        })
-      )
-    )
+        }),
+      ),
+    ),
   );
 };
 
@@ -35,9 +40,10 @@ export const correlationIdInterceptor: HttpInterceptorFn = (req, next) => {
     req.clone({
       setHeaders: {
         'X-Correlation-ID': id,
-        'X-Core-API-Version': inject(CORE_API_CONFIG, { optional: true })?.coreApiVersion ?? 'v1',
+        'X-Core-API-Version':
+          inject(CORE_API_CONFIG, { optional: true })?.coreApiVersion ?? 'v1',
       },
-    })
+    }),
   );
 };
 
@@ -56,12 +62,16 @@ export const errorInterceptor: HttpInterceptorFn = (req, next) => {
       }
 
       return throwError(() => error);
-    })
+    }),
   );
 };
 
-function isBffUrl(url: string, bffBaseUrl: string): boolean {
-  if (bffBaseUrl && url.startsWith(bffBaseUrl)) {
+function isBffUrl(url: string, config: CoreApiConfig): boolean {
+  if (config.bffBaseUrl && url.startsWith(config.bffBaseUrl)) {
+    return true;
+  }
+
+  if (url.startsWith(config.paymentServiceBaseUrl)) {
     return true;
   }
 

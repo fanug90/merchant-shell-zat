@@ -7,12 +7,17 @@ import { ChangeDetectionStrategy, Component, input } from '@angular/core';
     <article class="es-card">
       @if (title() || subtitle()) {
         <header class="es-card__header">
-          @if (title()) {
-            <h2>{{ title() }}</h2>
-          }
-          @if (subtitle()) {
-            <p>{{ subtitle() }}</p>
-          }
+          <div class="es-card__header-text">
+            @if (title()) {
+              <h2>{{ title() }}</h2>
+            }
+            @if (subtitle()) {
+              <p>{{ subtitle() }}</p>
+            }
+          </div>
+          <div class="es-card__header-actions">
+            <ng-content select="[card-actions]" />
+          </div>
         </header>
       }
       <div class="es-card__body">
@@ -30,8 +35,21 @@ import { ChangeDetectionStrategy, Component, input } from '@angular/core';
       }
 
       .es-card__header {
+        align-items: center;
         border-bottom: 1px solid var(--es-color-border);
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+        justify-content: space-between;
         padding: 1rem 1.125rem;
+      }
+
+      .es-card__header-text {
+        min-width: 0;
+      }
+
+      .es-card__header-actions:empty {
+        display: none;
       }
 
       h2 {
