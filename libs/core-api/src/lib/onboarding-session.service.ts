@@ -13,8 +13,12 @@ export class OnboardingSessionService {
 
   setVerification(phone: string, response: PhoneOtpVerificationResponse): void {
     this.phoneSignal.set(phone);
-    this.tokenSignal.set(response.accessToken);
-    this.expiresAtSignal.set(Date.now() + response.expiresInSeconds * 1000);
+    this.tokenSignal.set(response.token.accessToken);
+    this.expiresAtSignal.set(
+      Date.now() + response.token.expiresInSeconds * 1000,
+    );
+    // this.tokenSignal.set(normalized.accessToken);
+    // this.expiresAtSignal.set(Date.now() + normalized.expiresInSeconds * 1000);
   }
 
   clear(): void {
@@ -27,7 +31,9 @@ export class OnboardingSessionService {
     const token = this.tokenSignal();
 
     if (!token) {
-      throw new Error('Onboarding phone OTP must be verified before continuing.');
+      throw new Error(
+        'Onboarding phone OTP must be verified before continuing.',
+      );
     }
 
     return { Authorization: `Bearer ${token}` };

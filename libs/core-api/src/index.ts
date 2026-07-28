@@ -6,3 +6,4 @@ export * from './lib/onboarding-api.service';
 export * from './lib/onboarding-session.service';
 export * from './lib/onboarding.types';
 export * from './lib/page.model';
+export * from './lib/setting-api-service';

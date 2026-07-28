@@ -1,22 +1,29 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
 import { TenantContextService } from '@zat-main-web/tenant-context';
 import { AUTH_CONFIG, DEFAULT_AUTH_CONFIG } from './auth.config';
+import { Router } from '@angular/router';
 
 interface TokenEndpointResponse {
   access_token: string;
   refresh_token?: string;
+  //added to help logout the user when the token expires
+  id_token?: string;
   token_type: string;
   expires_in: number;
 }
 
 @Injectable({ providedIn: 'root' })
 export class AuthService {
-  private readonly config = inject(AUTH_CONFIG, { optional: true }) ?? DEFAULT_AUTH_CONFIG;
+  private readonly config =
+    inject(AUTH_CONFIG, { optional: true }) ?? DEFAULT_AUTH_CONFIG;
   private readonly tenant = inject(TenantContextService);
+  private readonly router = inject(Router);
   private readonly tokenSignal = signal<string | null>(null);
   private readonly refreshTokenSignal = signal<string | null>(null);
   private readonly expiresAtSignal = signal<number | null>(null);
   private readonly authenticatedSignal = signal(this.config.devAuthenticated);
+  //added to help logout the user when the token expires
+  private readonly idTokenSignal = signal<string | null>(null);
 
   readonly authenticated = this.authenticatedSignal.asReadonly();
   readonly token = this.tokenSignal.asReadonly();
@@ -43,11 +50,16 @@ export class AuthService {
 
   setToken(token: string | null): void {
     this.tokenSignal.set(token);
-    this.authenticatedSignal.set(Boolean(token) || this.config.devAuthenticated);
+    this.authenticatedSignal.set(
+      Boolean(token) || this.config.devAuthenticated,
+    );
   }
 
   async login(forceIdentityRedirect = false): Promise<void> {
-    if (this.config.keycloakUrl && (forceIdentityRedirect || !this.config.devAuthenticated)) {
+    if (
+      this.config.keycloakUrl &&
+      (forceIdentityRedirect || !this.config.devAuthenticated)
+    ) {
       const verifier = randomBase64Url(64);
       const state = crypto.randomUUID();
       const nonce = crypto.randomUUID();
@@ -76,10 +88,17 @@ export class AuthService {
     const callbackUrl = new URL(url);
     const code = callbackUrl.searchParams.get('code');
     const state = callbackUrl.searchParams.get('state');
+
     const expectedState = sessionStorage.getItem('es_auth_state');
     const verifier = sessionStorage.getItem('es_pkce_verifier');
 
-    if (!code || !state || !expectedState || state !== expectedState || !verifier) {
+    if (
+      !code ||
+      !state ||
+      !expectedState ||
+      state !== expectedState ||
+      !verifier
+    ) {
       return false;
     }
 
@@ -97,7 +116,7 @@ export class AuthService {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body,
-      }
+      },
     );
 
     if (!response.ok) {
@@ -108,6 +127,8 @@ export class AuthService {
     const tokenResponse = (await response.json()) as TokenEndpointResponse;
     this.tokenSignal.set(tokenResponse.access_token);
     this.refreshTokenSignal.set(tokenResponse.refresh_token ?? null);
+    //added to help logout the user when the token expires
+    this.idTokenSignal.set(tokenResponse.id_token ?? null);
     this.expiresAtSignal.set(Date.now() + tokenResponse.expires_in * 1000);
     this.authenticatedSignal.set(true);
     this.clearPkceState();
@@ -120,6 +141,23 @@ export class AuthService {
     this.expiresAtSignal.set(null);
     this.authenticatedSignal.set(false);
     this.tenant.reset();
+
+    //added to help logout the user when the token expires
+    const idToken = this.idTokenSignal();
+    const hadKeycloakSession = !!this.config.keycloakUrl && !!idToken;
+
+    if (hadKeycloakSession) {
+      const postLogoutRedirectUri = `${window.location.origin}/login`;
+      const logoutUrl =
+        `${this.config.keycloakUrl}/realms/${this.config.keycloakRealm}/protocol/openid-connect/logout` +
+        `?id_token_hint=${encodeURIComponent(idToken!)}` +
+        `&post_logout_redirect_uri=${encodeURIComponent(postLogoutRedirectUri)}` +
+        `&client_id=${encodeURIComponent(this.config.keycloakClientId)}`;
+      window.location.assign(logoutUrl);
+      return;
+    }
+
+    await this.router.navigate(['/login'], { replaceUrl: true });
   }
 
   hasRole(role: string): boolean {
@@ -162,5 +200,8 @@ function base64Url(bytes: Uint8Array): string {
   bytes.forEach((byte) => {
     binary += String.fromCharCode(byte);
   });
-  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  return btoa(binary)
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '');
 }

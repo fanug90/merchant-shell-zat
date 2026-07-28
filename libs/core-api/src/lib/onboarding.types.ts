@@ -22,9 +22,14 @@ export type MerchantOnboardingStatus =
   | 'ACTIVE'
   | 'SUSPENDED';
 
-export type DocumentType = 'KEBELE_ID' | 'PASSPORT' | 'DRIVERS_LICENSE' | 'TRADE_LICENSE';
+export type DocumentType =
+  | 'KEBELE_ID'
+  | 'PASSPORT'
+  | 'DRIVERS_LICENSE'
+  | 'TRADE_LICENSE';
 export type DocumentSide = 'FRONT' | 'BACK' | 'SELFIE';
 export type BankCode = 'CBE' | 'ETT' | 'AWB' | 'DAS' | 'ABB' | 'OTHER';
+export type SideUploadStatus = { type: 'success' | 'error'; message: string };
 
 export interface PhoneOtpRequest {
   phone: string;
@@ -44,10 +49,63 @@ export interface PhoneOtpVerificationRequest {
 
 export interface PhoneOtpVerificationResponse {
   phoneVerified: boolean;
-  accessToken: string;
-  refreshToken?: string;
-  tokenType: string;
-  expiresInSeconds: number;
+  token: {
+    accessToken: string;
+    refreshToken?: string;
+    tokenType: string;
+    expiresInSeconds: number;
+  };
+}
+
+export function normalizePhoneOtpVerificationResponse(
+  response: PhoneOtpVerificationResponse | Record<string, unknown>,
+): PhoneOtpVerificationResponse {
+  const tokenObj = (response as any).token;
+
+  const accessToken =
+    tokenObj?.accessToken ??
+    (response as any).accessToken ??
+    (response as any)['access_token'] ??
+    (response as any)['onboardingAccessToken'] ??
+    (response as any)['onboarding_access_token'] ??
+    (response as any)['token'];
+
+  if (!accessToken) {
+    throw new Error(
+      'OTP verification succeeded but the server did not return an access token.',
+    );
+  }
+
+  const refreshToken =
+    tokenObj?.refreshToken ??
+    (response as any).refreshToken ??
+    (response as any)['refresh_token'] ??
+    null;
+
+  const tokenType =
+    tokenObj?.tokenType ??
+    (response as any).tokenType ??
+    (response as any)['token_type'] ??
+    'Bearer';
+
+  const expiresInSeconds =
+    tokenObj?.expiresInSeconds ??
+    (response as any).expiresInSeconds ??
+    (response as any)['expires_in_seconds'] ??
+    (response as any)['expires_in'] ??
+    3600;
+
+  return {
+    phoneVerified:
+      (response as any).phoneVerified ??
+      Boolean((response as any)['phone_verified'] ?? true),
+    token: {
+      accessToken,
+      refreshToken: refreshToken ?? undefined,
+      tokenType,
+      expiresInSeconds,
+    },
+  };
 }
 
 export interface AddressDto {
@@ -83,6 +141,8 @@ export interface MerchantResponse {
   ownerName?: string;
   phone?: string;
   email?: string;
+  // adding address dto to be able to populate when there is data on db already registerd
+  address?: AddressDto;
   status?: MerchantOnboardingStatus;
   plan?: 'FREE' | 'PRO';
   settlementBankCode?: BankCode;
@@ -107,15 +167,26 @@ export interface KycDocumentUploadResponse {
   expiryDate?: string;
 }
 
+export interface UploadPolicyResponse {
+  maxFileSizeBytes: number;
+  maxFileSizeLabel?: string;
+  allowedContentTypes: string[];
+}
+
 export interface KycSubmitRequest {
-  documentType: DocumentType;
   documentIds: string[];
 }
 
 export interface KycSubmissionResponse {
   id?: string;
   merchantId?: string;
-  status?: 'NOT_STARTED' | 'IN_PROGRESS' | 'SUBMITTED' | 'APPROVED' | 'REJECTED' | 'REQUIRES_RESUBMISSION';
+  status?:
+    | 'NOT_STARTED'
+    | 'IN_PROGRESS'
+    | 'SUBMITTED'
+    | 'APPROVED'
+    | 'REJECTED'
+    | 'REQUIRES_RESUBMISSION';
   documentType?: DocumentType;
   rejectionReason?: string;
   submittedAt?: string;
@@ -163,12 +234,15 @@ export interface OnboardingReviewResponse {
   transactionFeeLabel?: string;
 }
 
+/** Full onboarding state — kycRequirements is now embedded here */
 export interface OnboardingStateResponse {
   merchantId?: string;
   currentStep?: OnboardingStep;
   completedSteps?: OnboardingStep[];
   checklist?: OnboardingChecklistResponse;
   review?: OnboardingReviewResponse;
+  // Grouped KYC requirements returned with the state
+  kycRequirements?: KycRequirementGroup[];
   blockers?: string[];
 }
 
@@ -176,6 +250,8 @@ export interface OnboardingSubmitRequest {
   acceptTermsOfService: boolean;
   acceptPrivacyPolicy: boolean;
   acceptNbeConsent: boolean;
+  password: string;
+  confirmPassword: string;
 }
 
 export interface OnboardingSubmitResponse {
@@ -184,4 +260,125 @@ export interface OnboardingSubmitResponse {
   currentStep: OnboardingStep;
   approvedAt?: string;
   nextActions?: string[];
+  token?: {
+    accessToken: string;
+    refreshToken?: string;
+    tokenType: string;
+    expiresInSeconds: number;
+  };
+}
+
+// export interface UploadedKycFile {
+//   documentId: string;
+//   side: DocumentSide;
+//   fileName: string;
+//   fileUrl?: string;
+//   documentType: DocumentType;
+// }
+
+// export interface UploadPolicyResponse {
+//   maxFileSizeBytes: number;
+//   maxFileSizeLabel: string;
+//   allowedContentTypes: string[];
+// }
+
+/** ONE_OF = user picks exactly one option; ALL_OF = user must complete every option */
+export type KycSelectionMode = 'ONE_OF' | 'ALL_OF';
+
+/** A single document type option within a KYC requirement group */
+export interface KycDocumentOption {
+  documentType: DocumentType;
+  displayName: string;
+  requiredSides: DocumentSide[];
+  uploadedSides: DocumentSide[];
+  missingSides: DocumentSide[];
+  expiryDateRequired: boolean;
+  expiryDate?: string;
+  valid?: boolean;
+  invalidReason?: string;
+  uploaded: boolean;
+  complete: boolean;
+}
+
+/** A KYC requirement group (e.g. "Identity document" or "Business license") */
+export interface KycRequirementGroup {
+  code: string;
+  displayName: string;
+  selectionMode: KycSelectionMode;
+  requiredCount: number;
+  satisfied: boolean;
+  options: KycDocumentOption[];
+}
+
+/** Server-driven upload constraints from GET /v1/upload-policy */
+export interface UploadPolicy {
+  maxFileSizeBytes: number;
+  maxFileSizeLabel: string;
+  allowedContentTypes: string[];
+}
+
+// added types to support the new onboarding flow
+
+export interface KycDocumentFile {
+  id: string;
+  side: DocumentSide;
+  fileName: string;
+  fileUrl?: string;
+  contentType?: string;
+  createdAt?: string;
+}
+
+export interface KycDocumentRecord {
+  id: string;
+  documentType: DocumentType;
+  status?: 'PENDING' | 'VERIFIED' | 'REJECTED' | string;
+  expiryDate?: string;
+  verifiedAt?: string;
+  files: KycDocumentFile[];
+}
+
+export interface KycSubmissionResponse {
+  id?: string;
+  merchantId?: string;
+  status?:
+    | 'NOT_STARTED'
+    | 'IN_PROGRESS'
+    | 'SUBMITTED'
+    | 'APPROVED'
+    | 'REJECTED'
+    | 'REQUIRES_RESUBMISSION';
+  documentType?: DocumentType;
+  livenessScore?: number;
+  faceMatchScore?: number;
+  reviewedBy?: string;
+  reviewedAt?: string;
+  rejectionReason?: string;
+  submittedAt?: string;
+  createdAt?: string;
+  documents?: KycDocumentRecord[];
+}
+
+// Additional types for the new setting flow
+
+export interface MerchantUpdateRequest {
+  businessName?: string;
+  businessNameAm?: string;
+  businessType?: BusinessType;
+  email?: string;
+  address?: AddressDto;
+  estimatedMonthlyRevenue?: number;
+  plan?: 'FREE' | 'PRO';
+}
+
+export interface PasswordChangeRequest {
+  currentPassword: string;
+  newPassword: string;
+  confirmPassword: string;
+}
+
+export interface AuthTokenResponse {
+  accessToken: string;
+  refreshToken?: string;
+  tokenType: string;
+  expiresInSeconds: number;
 }
