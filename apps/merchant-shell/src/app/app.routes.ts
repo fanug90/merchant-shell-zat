@@ -9,31 +9,37 @@ export const appRoutes: Route[] = [
   {
     path: 'login',
     loadComponent: () =>
-      import('./core/auth/login.component').then((module) => module.LoginComponent),
+      import('./core/auth/login.component').then(
+        (module) => module.LoginComponent,
+      ),
   },
   {
     path: 'callback',
     loadComponent: () =>
-      import('./core/auth/callback.component').then((module) => module.CallbackComponent),
+      import('./core/auth/callback.component').then(
+        (module) => module.CallbackComponent,
+      ),
   },
   {
     path: 'onboarding',
     loadComponent: () =>
       import('./features/onboarding/onboarding.component').then(
-        (module) => module.OnboardingComponent
+        (module) => module.OnboardingComponent,
       ),
   },
   {
     path: 'workspace-error',
     loadComponent: () =>
       import('./core/errors/workspace-error.component').then(
-        (module) => module.WorkspaceErrorComponent
+        (module) => module.WorkspaceErrorComponent,
       ),
   },
   {
     path: 'maintenance',
     loadComponent: () =>
-      import('./core/errors/maintenance.component').then((module) => module.MaintenanceComponent),
+      import('./core/errors/maintenance.component').then(
+        (module) => module.MaintenanceComponent,
+      ),
   },
   {
     path: '',
@@ -45,14 +51,40 @@ export const appRoutes: Route[] = [
       {
         path: 'home',
         loadComponent: () =>
-          import('./features/home/home.component').then((module) => module.HomeComponent),
+          import('./features/home/home.component').then(
+            (module) => module.HomeComponent,
+          ),
       },
       {
         path: 'transactions',
         canActivate: [roleGuard(['MERCHANT_ADMIN', 'MERCHANT_USER'])],
         loadComponent: () =>
           import('./features/transactions/transactions.component').then(
-            (module) => module.TransactionsComponent
+            (module) => module.TransactionsComponent,
+          ),
+      },
+      {
+        path: 'payments',
+        canActivate: [roleGuard(['MERCHANT_ADMIN', 'MERCHANT_USER'])],
+        loadComponent: () =>
+          import('./features/payments/payments.component').then(
+            (module) => module.PaymentsComponent,
+          ),
+      },
+      {
+        path: 'payments/receive',
+        canActivate: [roleGuard(['MERCHANT_ADMIN', 'MERCHANT_USER'])],
+        loadComponent: () =>
+          import('./features/payments/receive-payment.component').then(
+            (module) => module.ReceivePaymentComponent,
+          ),
+      },
+      {
+        path: 'payments/:referenceCode',
+        canActivate: [roleGuard(['MERCHANT_ADMIN', 'MERCHANT_USER'])],
+        loadComponent: () =>
+          import('./features/payments/payment-detail.component').then(
+            (m) => m.PaymentDetailComponent,
           ),
       },
       {
@@ -60,7 +92,7 @@ export const appRoutes: Route[] = [
         canActivate: [roleGuard(['MERCHANT_ADMIN'])],
         loadComponent: () =>
           import('./features/reports/reports.component').then(
-            (module) => module.ReportsComponent
+            (module) => module.ReportsComponent,
           ),
       },
       {
@@ -68,7 +100,7 @@ export const appRoutes: Route[] = [
         canActivate: [roleGuard(['MERCHANT_ADMIN'])],
         loadComponent: () =>
           import('./features/settings/settings.component').then(
-            (module) => module.SettingsComponent
+            (module) => module.SettingsComponent,
           ),
       },
       {
@@ -76,7 +108,7 @@ export const appRoutes: Route[] = [
         canActivate: [roleGuard(['MERCHANT_ADMIN'])],
         loadComponent: () =>
           import('./features/plugins/marketplace/marketplace.component').then(
-            (module) => module.MarketplaceComponent
+            (module) => module.MarketplaceComponent,
           ),
       },
       {
@@ -88,19 +120,25 @@ export const appRoutes: Route[] = [
         path: 'developer',
         canActivate: [roleGuard(['DEVELOPER'])],
         loadComponent: () =>
-          import('./core/errors/not-found.component').then((module) => module.NotFoundComponent),
+          import('./core/errors/not-found.component').then(
+            (module) => module.NotFoundComponent,
+          ),
       },
       {
         path: 'admin',
         canActivate: [roleGuard(['PLATFORM_ADMIN'])],
         loadComponent: () =>
-          import('./core/errors/not-found.component').then((module) => module.NotFoundComponent),
+          import('./core/errors/not-found.component').then(
+            (module) => module.NotFoundComponent,
+          ),
       },
     ],
   },
   {
     path: '**',
     loadComponent: () =>
-      import('./core/errors/not-found.component').then((module) => module.NotFoundComponent),
+      import('./core/errors/not-found.component').then(
+        (module) => module.NotFoundComponent,
+      ),
   },
 ];

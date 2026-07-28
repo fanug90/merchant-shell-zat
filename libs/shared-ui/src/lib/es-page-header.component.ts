@@ -19,6 +19,7 @@ import { ChangeDetectionStrategy, Component, input } from '@angular/core';
       .es-page-header {
         align-items: center;
         display: flex;
+        flex-wrap: wrap;
         gap: 1rem;
         justify-content: space-between;
         margin-bottom: 1.25rem;
@@ -34,6 +35,17 @@ import { ChangeDetectionStrategy, Component, input } from '@angular/core';
       p {
         color: var(--es-color-neutral-600);
         margin: 0.25rem 0 0;
+      }
+
+      @media (max-width: 640px) {
+        .es-page-header {
+          align-items: stretch;
+          flex-direction: column;
+        }
+
+        h1 {
+          font-size: 1.25rem;
+        }
       }
     `,
   ],

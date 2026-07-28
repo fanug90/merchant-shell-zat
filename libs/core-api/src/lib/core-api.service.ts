@@ -24,7 +24,8 @@ export interface TransactionQueryParams {
 @Injectable({ providedIn: 'root' })
 export class CoreApiService {
   private readonly http = inject(HttpClient);
-  private readonly config = inject(CORE_API_CONFIG, { optional: true }) ?? DEFAULT_CORE_API_CONFIG;
+  private readonly config =
+    inject(CORE_API_CONFIG, { optional: true }) ?? DEFAULT_CORE_API_CONFIG;
 
   getWorkspace(): Observable<WorkspaceResponse> {
     if (this.config.useMockWorkspace) {
@@ -34,14 +35,19 @@ export class CoreApiService {
     return this.http.get<WorkspaceResponse>(this.url('/me/workspace'));
   }
 
-  getTransactions(params: TransactionQueryParams = {}): Observable<Page<TransactionSummary>> {
+  getTransactions(
+    params: TransactionQueryParams = {},
+  ): Observable<Page<TransactionSummary>> {
     if (this.config.useMockWorkspace) {
       return of(MOCK_TRANSACTIONS);
     }
 
-    return this.http.get<Page<TransactionSummary>>(this.url('/api/core/transactions'), {
-      params: toHttpParams(params),
-    });
+    return this.http.get<Page<TransactionSummary>>(
+      this.url('/api/core/transactions'),
+      {
+        params: toHttpParams(params),
+      },
+    );
   }
 
   private url(path: string): string {
@@ -79,10 +85,28 @@ export const MOCK_WORKSPACE: WorkspaceResponse = {
   },
   navigation: [
     { label: 'Dashboard', route: '/home', icon: 'home', type: 'CORE' },
-    { label: 'Transactions', route: '/transactions', icon: 'receipt', type: 'CORE' },
-    { label: 'Reports', route: '/reports', icon: 'bar_chart', type: 'CORE', roles: ['MERCHANT_ADMIN'] },
+    {
+      label: 'Transactions',
+      route: '/transactions',
+      icon: 'receipt',
+      type: 'CORE',
+    },
+    { label: 'Payments', route: '/payments', icon: 'payments', type: 'CORE' },
+    {
+      label: 'Reports',
+      route: '/reports',
+      icon: 'bar_chart',
+      type: 'CORE',
+      roles: ['MERCHANT_ADMIN'],
+    },
     { label: 'Settings', route: '/settings', icon: 'settings', type: 'CORE' },
-    { label: 'Plugins', route: '/plugins', icon: 'extension', type: 'CORE', roles: ['MERCHANT_ADMIN'] },
+    {
+      label: 'Plugins',
+      route: '/plugins',
+      icon: 'extension',
+      type: 'CORE',
+      roles: ['MERCHANT_ADMIN'],
+    },
   ],
   plugins: [
     {
@@ -98,8 +122,18 @@ export const MOCK_WORKSPACE: WorkspaceResponse = {
         exposedModule: './Routes',
       },
       navigation: [
-        { label: 'Tables', route: '/plugins/cafe/tables', icon: 'table_restaurant', type: 'PLUGIN' },
-        { label: 'Orders', route: '/plugins/cafe/orders', icon: 'receipt_long', type: 'PLUGIN' },
+        {
+          label: 'Tables',
+          route: '/plugins/cafe/tables',
+          icon: 'table_restaurant',
+          type: 'PLUGIN',
+        },
+        {
+          label: 'Orders',
+          route: '/plugins/cafe/orders',
+          icon: 'receipt_long',
+          type: 'PLUGIN',
+        },
       ],
       permissions: ['cafe:tables:read', 'cafe:orders:write'],
     },
@@ -111,7 +145,8 @@ export const MOCK_WORKSPACE: WorkspaceResponse = {
       requiredCoreApiVersion: 'v1',
       status: 'SUSPENDED',
       frontend: {
-        remoteEntry: 'https://cdn.zat.local/plugins/retail/v0.9.0/remoteEntry.js',
+        remoteEntry:
+          'https://cdn.zat.local/plugins/retail/v0.9.0/remoteEntry.js',
         remoteName: 'retailPlugin',
         exposedModule: './Routes',
       },

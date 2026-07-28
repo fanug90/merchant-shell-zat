@@ -7,3 +7,4 @@ export * from './lib/es-page-header.component';
 export * from './lib/es-spinner.component';
 export * from './lib/es-status-badge.component';
 export * from './lib/es-notification-toast.component';
+export * from './lib/es-progress-steps.component';
