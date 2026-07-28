@@ -9,3 +9,4 @@ export * from './lib/page.model';
 
 export * from './lib/payment.types';
 export * from './lib/payment-api.service';
+export * from './lib/setting-api-service';

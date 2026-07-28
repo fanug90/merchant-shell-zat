@@ -9,7 +9,7 @@ import { ChangeDetectionStrategy, Component, input, output } from '@angular/core
         <span class="material-symbols-outlined">{{ icon() }}</span>
       </div>
       <h2>{{ title() }}</h2>
-      @if (description()) {
+      @if (description()) { 
         <p>{{ description() }}</p>
       }
       @if (actionLabel()) {

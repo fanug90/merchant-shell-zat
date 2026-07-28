@@ -1,5 +1,5 @@
 import { Injectable, signal } from '@angular/core';
-import { PhoneOtpVerificationResponse, normalizePhoneOtpVerificationResponse } from './onboarding.types';
+import { PhoneOtpVerificationResponse } from './onboarding.types';
 
 @Injectable({ providedIn: 'root' })
 export class OnboardingSessionService {
@@ -11,14 +11,14 @@ export class OnboardingSessionService {
   readonly phone = this.phoneSignal.asReadonly();
   readonly expiresAt = this.expiresAtSignal.asReadonly();
 
-  setVerification(
-    phone: string,
-    response: PhoneOtpVerificationResponse | Record<string, unknown>
-  ): void {
-    const normalized = normalizePhoneOtpVerificationResponse(response);
+  setVerification(phone: string, response: PhoneOtpVerificationResponse): void {
     this.phoneSignal.set(phone);
-    this.tokenSignal.set(normalized.accessToken);
-    this.expiresAtSignal.set(Date.now() + normalized.expiresInSeconds * 1000);
+    this.tokenSignal.set(response.token.accessToken);
+    this.expiresAtSignal.set(
+      Date.now() + response.token.expiresInSeconds * 1000,
+    );
+    // this.tokenSignal.set(normalized.accessToken);
+    // this.expiresAtSignal.set(Date.now() + normalized.expiresInSeconds * 1000);
   }
 
   clear(): void {
@@ -31,7 +31,9 @@ export class OnboardingSessionService {
     const token = this.tokenSignal();
 
     if (!token) {
-      throw new Error('Onboarding phone OTP must be verified before continuing.');
+      throw new Error(
+        'Onboarding phone OTP must be verified before continuing.',
+      );
     }
 
     return { Authorization: `Bearer ${token}` };
